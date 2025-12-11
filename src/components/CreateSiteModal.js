@@ -7,11 +7,11 @@ export default function CreateSiteModal({ onClose, onSubmit }) {
     e.stopPropagation();
   };
 
-  // 表單狀態 (未來要接後端 API 可用)
+  // ➜ 正確的資料表欄位
   const [formData, setFormData] = useState({
-    name: '',
-    location: '',
-    capacity: ''
+    site_code: "",
+    site_name: "",
+    location: ""
   });
 
   const handleChange = (e) => {
@@ -19,27 +19,29 @@ export default function CreateSiteModal({ onClose, onSubmit }) {
   };
 
   const handleSubmit = () => {
-    // 這裡可以加入驗證邏輯
-    if (!formData.name || !formData.location) {
-      alert("請填寫完整資訊");
+    // 基本驗證（避免空白）
+    if (!formData.site_code || !formData.site_name || !formData.location) {
+      alert("請完整填寫案場代號、案場名稱與地點");
       return;
     }
-    onSubmit(formData); // 將資料傳回 App.js 處理
+
+    onSubmit(formData);  // 將資料回傳給 App.js → 呼叫 API
   };
 
   return (
-    <div 
+    <div
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm transition-opacity"
       onClick={onClose}
     >
-      <div 
+      <div
         className="relative w-full max-w-md transform rounded-xl border border-white/10 bg-[#1E1E1E] p-6 shadow-2xl transition-all"
         onClick={handleModalClick}
       >
-        {/* 標題與關閉按鈕 */}
+
+        {/* 標題 */}
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-xl font-bold text-white">建立新的案場</h2>
-          <button 
+          <button
             onClick={onClose}
             className="text-white/50 hover:text-white transition-colors"
           >
@@ -47,19 +49,34 @@ export default function CreateSiteModal({ onClose, onSubmit }) {
           </button>
         </div>
 
-        {/* 表單內容 */}
+        {/* ------------------ 表單 ------------------ */}
         <div className="flex flex-col gap-4">
-          
+
+          {/* 案場代號 */}
+          <div className="flex flex-col gap-2">
+            <label htmlFor="site_code" className="text-sm font-medium text-white/80">
+              案場代號
+            </label>
+            <input
+              type="text"
+              id="site_code"
+              placeholder="請輸入案場代號，例如：A001"
+              value={formData.site_code}
+              onChange={handleChange}
+              className="w-full rounded-lg border border-white/10 bg-black/20 px-4 py-3 text-sm text-white placeholder-white/30 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-all"
+            />
+          </div>
+
           {/* 案場名稱 */}
           <div className="flex flex-col gap-2">
-            <label htmlFor="name" className="text-sm font-medium text-white/80">
+            <label htmlFor="site_name" className="text-sm font-medium text-white/80">
               案場名稱
             </label>
-            <input 
-              type="text" 
-              id="name" 
+            <input
+              type="text"
+              id="site_name"
               placeholder="請輸入案場名稱"
-              value={formData.name}
+              value={formData.site_name}
               onChange={handleChange}
               className="w-full rounded-lg border border-white/10 bg-black/20 px-4 py-3 text-sm text-white placeholder-white/30 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-all"
             />
@@ -70,9 +87,9 @@ export default function CreateSiteModal({ onClose, onSubmit }) {
             <label htmlFor="location" className="text-sm font-medium text-white/80">
               地點
             </label>
-            <input 
-              type="text" 
-              id="location" 
+            <input
+              type="text"
+              id="location"
               placeholder="例如：嘉義縣太保市"
               value={formData.location}
               onChange={handleChange}
@@ -80,26 +97,11 @@ export default function CreateSiteModal({ onClose, onSubmit }) {
             />
           </div>
 
-          {/* 裝置容量 */}
-          <div className="flex flex-col gap-2">
-            <label htmlFor="capacity" className="text-sm font-medium text-white/80">
-              裝置容量 (kWp)
-            </label>
-            <input 
-              type="number" 
-              id="capacity" 
-              placeholder="請輸入數字"
-              value={formData.capacity}
-              onChange={handleChange}
-              className="w-full rounded-lg border border-white/10 bg-black/20 px-4 py-3 text-sm text-white placeholder-white/30 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-all"
-            />
-          </div>
-
         </div>
 
-        {/* 底部按鈕 */}
+        {/* 按鈕 */}
         <div className="mt-8 flex justify-end">
-          <button 
+          <button
             onClick={handleSubmit}
             className="rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-background-dark hover:scale-105 transition-transform"
           >

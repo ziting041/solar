@@ -1,0 +1,1 @@
+{"columns": ["STATION_ID", "theDate", "theHour", "GI", "TM", "EAC"], "stats": {"STATION_ID": {"count": 3405, "unique": 1, "top": "CPC_D414Z01", "freq": 3405, "mean": null, "min": null, "25%": null, "50%": null, "75%": null, "max": null, "std": null}, "theDate": {"count": 3405, "unique": null, "top": null, "freq": null, "mean": 

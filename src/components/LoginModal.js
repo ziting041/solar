@@ -1,22 +1,48 @@
-// src/components/LoginModal.js
-import React from 'react';
+import React, { useState } from "react";
 
-// 1. 新增 onLoginSuccess prop
-export default function LoginModal({ onClose, onSwitchToRegister, onLoginSuccess }) {
-  
-  const handleModalClick = (e) => {
-    e.stopPropagation();
+export default function LoginModal({
+  onClose,
+  onSwitchToRegister,
+  onLoginSuccess,
+}) {
+  const [account, setAccount] = useState("");
+  const [password, setPassword] = useState("");
+  const [msg, setMsg] = useState("");
+
+  const login = async (e) => {
+    e.preventDefault();
+
+    try {
+      const res = await fetch("http://127.0.0.1:8000/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_account: account,
+          user_pw: password,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setMsg(data.detail || "登入失敗");
+        return;
+      }
+
+      // 儲存登入資料
+      localStorage.setItem("user", JSON.stringify(data));
+      localStorage.setItem("user_id", data.user_id);
+
+      alert("登入成功！");
+      onLoginSuccess?.(data);
+      onClose?.();
+
+    } catch {
+      setMsg("伺服器連線錯誤");
+    }
   };
 
-  // 2. 建立表單提交的處理函式
-  const handleLoginSubmit = (e) => {
-    e.preventDefault(); // 防止頁面重新載入
-    // 這裡可以加入 email/password 的驗證
-
-    
-    // 3. 呼叫 onLoginSuccess 通知 App.js
-    onLoginSuccess();
-  };
+  const handleModalClick = (e) => e.stopPropagation();
 
   return (
     <div
@@ -24,87 +50,63 @@ export default function LoginModal({ onClose, onSwitchToRegister, onLoginSuccess
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-md rounded-2xl border border-white/10 bg-background-dark p-8 shadow-lg"
+        className="relative w-full max-w-md rounded-2xl bg-background-dark p-8 shadow-lg"
         onClick={handleModalClick}
       >
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-4 right-4 text-white/50 transition-colors hover:text-white"
+          className="absolute top-4 right-4 text-white/70"
         >
-          <span className="material-symbols-outlined">close</span>
+          ✕
         </button>
 
-        <div className="flex flex-col gap-6">
-          <h2 className="text-2xl font-bold text-white">
-            登入日光預平台
-          </h2>
+        <h2 className="text-2xl font-bold text-white mb-4">登入系統</h2>
 
-          {/* 4. 將 <form> 綁定 onSubmit 事件 */}
-          <form className="flex flex-col gap-4" onSubmit={handleLoginSubmit}>
-            {/* 電子郵件 */}
-            <div>
-              <label htmlFor="email" className="mb-2 block text-sm font-medium text-white/80">
-                電子郵件地址
-              </label>
-              <input
-                type="email"
-                id="email"
-                placeholder="請輸入您的電子郵件"
-                className="w-full rounded-lg border-none bg-white/10 px-4 py-3 text-white placeholder-white/40 focus:ring-2 focus:ring-primary"
-                // 為了快速測試，您可以加上 required
-                required 
-              />
-            </div>
+        {msg && <p className="text-red-400 mb-2">{msg}</p>}
 
-            {/* 密碼 */}
-            <div>
-              <div className="mb-2 flex items-center justify-between">
-                <label htmlFor="password" className="block text-sm font-medium text-white/80">
-                  密碼
-                </label>
-                <a href="#" className="text-sm text-primary/80 hover:text-primary">
-                  忘記密碼？
-                </a>
-              </div>
-              <div className="relative">
-                <input
-                  type="password"
-                  id="password"
-                  placeholder="請輸入您的密碼"
-                  className="w-full rounded-lg border-none bg-white/10 px-4 py-3 text-white placeholder-white/40 focus:ring-2 focus:ring-primary"
-                  // 為了快速測試加上 required
-                  required
-                />
-                <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                  <span className="material-symbols-outlined text-white/40">
-                    visibility
-                  </span>
-                </div>
-              </div>
-            </div>
+        <form className="flex flex-col gap-4" onSubmit={login}>
+          <div>
+            <label className="text-white/80 text-sm">帳號</label>
+            <input
+              type="text"
+              className="w-full rounded-lg bg-white/10 px-4 py-3 text-white"
+              required
+              value={account}
+              onChange={(e) => setAccount(e.target.value)}
+              placeholder="請輸入帳號"
+            />
+          </div>
 
-            {/* 登入按鈕 (type="submit") */}
-            <button
-              type="submit"
-              className="mt-4 w-full rounded-lg bg-primary py-3 text-base font-bold text-background-dark transition-transform hover:scale-105"
-            >
-              登入
-            </button>
-          </form>
+          <div>
+            <label className="text-white/80 text-sm">密碼</label>
+            <input
+              type="password"
+              className="w-full rounded-lg bg-white/10 px-4 py-3 text-white"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="請輸入密碼"
+            />
+          </div>
 
-          {/* 註冊連結 */}
-          <p className="text-center text-sm text-white/50">
-            還沒有帳號？{' '}
-            <button
-              type="button"
-              onClick={onSwitchToRegister}
-              className="font-medium text-primary hover:text-primary/80"
-            >
-              立即註冊
-            </button>
-          </p>
-        </div>
+          <button
+            type="submit"
+            className="mt-4 w-full rounded-lg bg-primary py-3 text-background-dark font-bold"
+          >
+            登入
+          </button>
+        </form>
+
+        <p className="text-center text-sm text-white/60 mt-3">
+          還沒有帳號？
+          <button
+            onClick={onSwitchToRegister}
+            className="text-primary ml-1"
+          >
+            立即註冊
+          </button>
+        </p>
       </div>
     </div>
   );
