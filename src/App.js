@@ -1,89 +1,88 @@
 // src/App.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 
-import PublicHome from './pages/PublicHome';
-import LoginModal from './components/LoginModal';
-import RegisterModal from './components/RegisterModal';
+// ===== Public (未登入) =====
+import PublicHome from "./pages/PublicHome";
+import LoginModal from "./components/LoginModal";
+import RegisterModal from "./components/RegisterModal";
 
-import Dashboard from './pages/Dashboard';
-import StartPredict from './pages/StartPredict';
-import DataCleaning from './pages/DataCleaning';
-import UnitAdjustment from './pages/UnitAdjustment';
-import ModelTraining from './pages/ModelTraining';
-import PredictionReport from './pages/PredictionReport';
-import Sites from './pages/Sites';
-import UserGuide from './pages/UserGuide';
+// ===== Main Pages =====
+import Dashboard from "./pages/Dashboard";
+import Sites from "./pages/Sites";
+import StartPredict from "./pages/StartPredict";
+import DataCleaning from "./pages/DataCleaning";
+import UnitAdjustment from "./pages/UnitAdjustment";
+import ModelTraining from "./pages/ModelTraining";
+import PredictionReport from "./pages/PredictionReport";
+import UserGuide from "./pages/UserGuide";
 
 import CreateSiteModal from "./components/CreateSiteModal";
 
-function App() {
+export default function App() {
 
-  // --------------------------
+  // ==============================
   // 狀態管理
-  // --------------------------
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
-  const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
-
+  // ==============================
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
 
-  const [currentPage, setCurrentPage] = useState("home");
-
-  // CreateSiteModal
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [isCreateSiteModalOpen, setIsCreateSiteModalOpen] = useState(false);
 
+  // ⭐ 目前所在頁面
+  const [currentPage, setCurrentPage] = useState("home");
 
-  // --------------------------
+  // ⭐ 存 StartPredict 傳來的 fileName / dataId
+  const [predictInfo, setPredictInfo] = useState(null);
+
+
+  // ==============================
   // 讀取 localStorage（保持登入狀態）
-  // --------------------------
+  // ==============================
   useEffect(() => {
-    const savedUser = localStorage.getItem("user");
+    const saved = localStorage.getItem("user");
 
-    if (!savedUser) return;
+    if (!saved) return;
 
     try {
-      const userObj = JSON.parse(savedUser);
+      const userObj = JSON.parse(saved);
       setCurrentUser(userObj);
       setIsLoggedIn(true);
       setCurrentPage("dashboard");
     } catch (err) {
-      console.error("localStorage user 解析錯誤：", err);
+      console.error("⚠ localStorage user 格式錯誤：", err);
       localStorage.removeItem("user");
     }
   }, []);
 
 
-  // --------------------------
+  // ==============================
   // Modal 開關
-  // --------------------------
-  const handleOpenLogin = () => setIsLoginModalOpen(true);
-  const handleCloseLoginModal = () => setIsLoginModalOpen(false);
+  // ==============================
+  const openLogin = () => setIsLoginModalOpen(true);
+  const closeLogin = () => setIsLoginModalOpen(false);
 
-  const handleOpenRegister = () => setIsRegisterModalOpen(true);
-  const handleCloseRegisterModal = () => setIsRegisterModalOpen(false);
+  const openRegister = () => setIsRegisterModalOpen(true);
+  const closeRegister = () => setIsRegisterModalOpen(false);
 
-
-  // --------------------------
-  // 註冊 ⇄ 登入切換
-  // --------------------------
-  const handleSwitchToRegister = () => {
+  const switchToRegister = () => {
     setIsLoginModalOpen(false);
     setIsRegisterModalOpen(true);
   };
 
-  const handleSwitchToLogin = () => {
+  const switchToLogin = () => {
     setIsRegisterModalOpen(false);
     setIsLoginModalOpen(true);
   };
 
 
-  // --------------------------
-  // 登入成功事件
-  // --------------------------
+  // ==============================
+  // 登入成功
+  // ==============================
   const handleLoginSuccess = (user) => {
     setIsLoggedIn(true);
     setCurrentUser(user);
-
     localStorage.setItem("user", JSON.stringify(user));
 
     setIsLoginModalOpen(false);
@@ -91,9 +90,9 @@ function App() {
   };
 
 
-  // --------------------------
+  // ==============================
   // 登出
-  // --------------------------
+  // ==============================
   const handleLogout = () => {
     setIsLoggedIn(false);
     setCurrentUser(null);
@@ -102,16 +101,15 @@ function App() {
   };
 
 
-  // --------------------------
-  // 新增案場
-  // --------------------------
-  const handleOpenCreateSite = () => setIsCreateSiteModalOpen(true);
-  const handleCloseCreateSite = () => setIsCreateSiteModalOpen(false);
+  // ==============================
+  // 新增案場 Modal
+  // ==============================
+  const openCreateSite = () => setIsCreateSiteModalOpen(true);
+  const closeCreateSite = () => setIsCreateSiteModalOpen(false);
 
-  const handleCreateSiteSubmit = async (formData) => {
-
+  const submitCreateSite = async (formData) => {
     if (!currentUser) {
-      alert("尚未登入，無法新增案場");
+      alert("請先登入！");
       return;
     }
 
@@ -131,152 +129,142 @@ function App() {
       return;
     }
 
-    alert("案場已新增！");
+    alert("案場新增成功！");
     setIsCreateSiteModalOpen(false);
   };
 
 
-  // --------------------------
-  // 教學畫面
-  // --------------------------
-  const handleOpenUserGuide = () => setCurrentPage("user-guide");
-  const handleFinishUserGuide = () => setCurrentPage("home");
-
-
-  // --------------------------
-  // 導航功能
-  // --------------------------
-  const handleGoToDashboard = () => {
-    setCurrentPage("dashboard");
+  // ==============================
+  // 導航
+  // ==============================
+  const go = (page) => {
+    setCurrentPage(page);
     window.scrollTo(0, 0);
   };
 
-  const handleGoToPredict = () => {
-    setCurrentPage("start-predict");
-    window.scrollTo(0, 0);
-  };
-
-  const handleGoToSites = () => {
-    setCurrentPage("site");
-    window.scrollTo(0, 0);
-  };
-
-  const handleGoToDataCleaning = () => {
-    setCurrentPage("data-cleaning");
-    window.scrollTo(0, 0);
-  };
-
-  const handleGoToUnitAdjustment = () => {
-    setCurrentPage("unit-adjustment");
-    window.scrollTo(0, 0);
-  };
-
-  const handleGoToModelTraining = () => {
-    setCurrentPage("model-training");
-    window.scrollTo(0, 0);
-  };
-
-  const handleGoToReport = () => {
-    setCurrentPage("report");
-    window.scrollTo(0, 0);
-  };
+  const goDashboard = () => go("dashboard");
+  const goPredict = () => go("start-predict");
+  const goSites = () => go("site");
+  const goDataCleaning = () => go("data-cleaning");
+  const goUnitAdjustment = () => go("unit-adjustment");
+  const goModelTraining = () => go("model-training");
+  const goReport = () => go("report");
 
 
-  // --------------------------
-  // 路由邏輯
-  // --------------------------
-
+  // ==============================
   // 教學頁
+  // ==============================
   if (currentPage === "user-guide") {
-    return <UserGuide onFinish={handleFinishUserGuide} />;
+    return <UserGuide onFinish={() => go("home")} />;
   }
 
-  // 未登入
+
+  // ==============================
+  // 未登入（首頁）
+  // ==============================
   if (!isLoggedIn) {
     return (
       <>
         <PublicHome
-          onOpenLogin={handleOpenLogin}
-          onOpenUserGuide={handleOpenUserGuide}
+          onOpenLogin={openLogin}
+          onOpenUserGuide={() => go("user-guide")}
         />
 
         {isLoginModalOpen && (
           <LoginModal
-            onClose={handleCloseLoginModal}
-            onSwitchToRegister={handleSwitchToRegister}
+            onClose={closeLogin}
+            onSwitchToRegister={switchToRegister}
             onLoginSuccess={handleLoginSuccess}
           />
         )}
 
         {isRegisterModalOpen && (
           <RegisterModal
-            onClose={handleCloseRegisterModal}
-            onSwitchToLogin={handleSwitchToLogin}
+            onClose={closeRegister}
+            onSwitchToLogin={switchToLogin}
           />
         )}
       </>
     );
   }
 
-  // --------------------------
-  // 已登入 — 案場管理頁
-  // --------------------------
+
+  // ==============================
+  // 已登入：案場管理頁
+  // ==============================
   if (currentPage === "site") {
     return (
       <>
         <Sites
           user={currentUser}
-          onOpenCreateSite={handleOpenCreateSite}
-          onNavigateToDashboard={handleGoToDashboard}
-          onNavigateToPredict={handleGoToPredict}
-          onNavigateToSites={handleGoToSites}
+          onOpenCreateSite={openCreateSite}
+          onNavigateToDashboard={goDashboard}
+          onNavigateToPredict={goPredict}
+          onNavigateToSites={goSites}
           onLogout={handleLogout}
         />
 
         {isCreateSiteModalOpen && (
           <CreateSiteModal
-            onClose={handleCloseCreateSite}
-            onSubmit={handleCreateSiteSubmit}
+            onClose={closeCreateSite}
+            onSubmit={submitCreateSite}
           />
         )}
       </>
     );
   }
 
-  // --------------------------
-  // 其他頁面
-  // --------------------------
+
+  // ==============================
+  // StartPredict（開始建立模型）
+  // ==============================
   if (currentPage === "start-predict") {
     return (
       <StartPredict
-        onBack={handleGoToDashboard}
-        onNavigateToPredict={handleGoToPredict}
-        onNavigateToSites={handleGoToSites}
+        onBack={goDashboard}
+        onNavigateToPredict={goPredict}
+        onNavigateToSites={goSites}
         onLogout={handleLogout}
-        onNext={handleGoToDataCleaning}
+
+        // ⭐ 把 StartPredict 回傳的 {dataId, fileName} 存起來
+        onNext={(info) => {
+          setPredictInfo(info);
+          goDataCleaning();
+        }}
       />
     );
   }
 
+
+  // ==============================
+  // DataCleaning（資料清理）
+  // ==============================
   if (currentPage === "data-cleaning") {
     return (
       <DataCleaning
-        onBack={handleGoToPredict}
-        onNext={handleGoToUnitAdjustment}
-        onNavigateToPredict={handleGoToPredict}
-        onNavigateToSites={handleGoToSites}
+        dataId={predictInfo?.dataId}     // ⭐ 確保 dataId 正確傳入
+        fileName={predictInfo?.fileName}
+
+        onBack={goPredict}
+        onNext={goUnitAdjustment}
+        onNavigateToPredict={goPredict}
+        onNavigateToSites={goSites}
         onLogout={handleLogout}
       />
     );
   }
 
+
+  // ==============================
+  // 後續流程
+  // ==============================
   if (currentPage === "unit-adjustment") {
     return (
       <UnitAdjustment
-        onBack={handleGoToDataCleaning}
-        onNext={handleGoToModelTraining}
-        onNavigateToPredict={handleGoToPredict}
-        onNavigateToSites={handleGoToSites}
+        onBack={goDataCleaning}
+        onNext={goModelTraining}
+        onNavigateToPredict={goPredict}
+        onNavigateToSites={goSites}
         onLogout={handleLogout}
       />
     );
@@ -285,10 +273,10 @@ function App() {
   if (currentPage === "model-training") {
     return (
       <ModelTraining
-        onBack={handleGoToUnitAdjustment}
-        onNext={handleGoToReport}
-        onNavigateToPredict={handleGoToPredict}
-        onNavigateToSites={handleGoToSites}
+        onBack={goUnitAdjustment}
+        onNext={goReport}
+        onNavigateToPredict={goPredict}
+        onNavigateToSites={goSites}
         onLogout={handleLogout}
       />
     );
@@ -297,37 +285,36 @@ function App() {
   if (currentPage === "report") {
     return (
       <PredictionReport
-        onBack={handleGoToModelTraining}
-        onNavigateToDashboard={handleGoToDashboard}
-        onNavigateToPredict={handleGoToPredict}
-        onNavigateToSites={handleGoToSites}
+        onBack={goModelTraining}
+        onNavigateToDashboard={goDashboard}
+        onNavigateToPredict={goPredict}
+        onNavigateToSites={goSites}
         onLogout={handleLogout}
       />
     );
   }
 
-  // --------------------------
+
+  // ==============================
   // 預設：Dashboard
-  // --------------------------
+  // ==============================
   return (
     <>
       <Dashboard
-        onLogout={handleLogout}
-        onNavigateToPredict={handleGoToPredict}
-        onNavigateToDashboard={handleGoToDashboard}
-        onNavigateToSites={handleGoToSites}
-        onOpenCreateSite={handleOpenCreateSite}
         user={currentUser}
+        onLogout={handleLogout}
+        onNavigateToPredict={goPredict}
+        onNavigateToDashboard={goDashboard}
+        onNavigateToSites={goSites}
+        onOpenCreateSite={openCreateSite}
       />
 
       {isCreateSiteModalOpen && (
         <CreateSiteModal
-          onClose={handleCloseCreateSite}
-          onSubmit={handleCreateSiteSubmit}
+          onClose={closeCreateSite}
+          onSubmit={submitCreateSite}
         />
       )}
     </>
   );
 }
-
-export default App;

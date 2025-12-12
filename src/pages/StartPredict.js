@@ -10,50 +10,44 @@ export default function StartPredict({
   onLogout,
 }) {
   const [activeTab, setActiveTab] = useState("existing");
-
-  // ====== 資料庫案場 ======
   const [sites, setSites] = useState([]);
   const [selectedSite, setSelectedSite] = useState("");
 
-  // ====== 新案場資料 ======
   const [newSiteName, setNewSiteName] = useState("");
   const [newSiteCode, setNewSiteCode] = useState("");
   const [newLocation, setNewLocation] = useState("");
 
-  // ====== 上傳檔案 ======
   const [file, setFile] = useState(null);
   const [fileName, setFileName] = useState("");
   const [features, setFeatures] = useState([]);
   const [rows, setRows] = useState(null);
   const [processing, setProcessing] = useState(false);
 
-  const userId = localStorage.getItem("user_id");
+  const getUserId = () => {
+    const user = JSON.parse(localStorage.getItem("user") || "{}");
+    return user.user_id || 0;
+  };
 
-  // === ⭐ 讀取資料庫案場 ===
   useEffect(() => {
-  const fetchSites = async () => {
-    try {
-      const res = await fetch(`http://127.0.0.1:8000/site/list?user_id=${userId}`);
-      const data = await res.json();
+    const uid = getUserId();
+    if (!uid) return;
 
-      console.log("=== /site/list 回傳內容 ===", data);
-
-      if (Array.isArray(data)) {
-        setSites(data);
-      } else {
-        console.warn("後端回傳格式非 array");
+    const fetchSites = async () => {
+      try {
+        const res = await fetch(`http://127.0.0.1:8000/site/list?user_id=${uid}`);
+        const data = await res.json();
+        setSites(Array.isArray(data) ? data : []);
+      } catch (e) {
+        console.error("取得案場失敗：", e);
         setSites([]);
       }
-    } catch (e) {
-      console.error("取得案場失敗", e);
-      setSites([]);
-    }
-  };
-  fetchSites();
-}, [userId]);
+    };
 
-  // === ⭐ 新增案場 ===
+    fetchSites();
+  }, []);
+
   const createNewSite = async () => {
+    const uid = getUserId();
     if (!newSiteName || !newSiteCode || !newLocation) {
       alert("請完整填寫新案場資料");
       return;
@@ -63,7 +57,7 @@ export default function StartPredict({
       site_name: newSiteName,
       site_code: newSiteCode,
       location: newLocation,
-      user_id: parseInt(userId),
+      user_id: uid,
     };
 
     try {
@@ -74,7 +68,6 @@ export default function StartPredict({
       });
 
       const json = await res.json();
-
       if (!json.site_id) {
         alert("新增案場失敗");
         return;
@@ -82,40 +75,37 @@ export default function StartPredict({
 
       alert("案場建立成功！");
 
-      // ⭐ 新增後重新讀取案場列表
-      const res2 = await fetch(
-        `http://127.0.0.1:8000/site/list?user_id=${userId}`
-      );
+      const res2 = await fetch(`http://127.0.0.1:8000/site/list?user_id=${uid}`);
       const siteList = await res2.json();
 
-      setSites(siteList);         // 更新 select 下拉選單
-      setSelectedSite(json.site_id);  // 自動選中剛剛新增的案場
-      setActiveTab("existing");       // 自動跳回現有案場
-
-    } catch (error) {
-      console.error(error);
-      alert("無法建立案場");
+      setSites(siteList);
+      setSelectedSite(json.site_id);
+      setActiveTab("existing");
+    } catch (e) {
+      console.error(e);
+      alert("新增案場失敗");
     }
   };
 
-  // === ⭐ 上傳檔案（會寫入 site_data） ===
   const handleFileSelect = async (event) => {
-  const uploadedFile = event.target.files[0];
+    const uploadedFile = event.target.files[0];
     if (!uploadedFile) return;
 
     if (!selectedSite) {
-      alert("請先選擇或建立案場！");
+      alert("請先選擇案場！");
       return;
     }
 
+    const uid = getUserId();
+
     const formData = new FormData();
-    formData.append("file", uploadedFile); // ⭐ 只放 file，site_id 用 query
+    formData.append("file", uploadedFile);
 
     try {
       setProcessing(true);
 
       const res = await fetch(
-        `http://127.0.0.1:8000/site/upload-data?site_id=${selectedSite}`,
+        `http://127.0.0.1:8000/site/upload-data?site_id=${selectedSite}&user_id=${uid}`,
         {
           method: "POST",
           body: formData,
@@ -123,22 +113,19 @@ export default function StartPredict({
       );
 
       const text = await res.text();
-      console.log("後端回傳原文：", text);
-
       let json;
       try {
         json = JSON.parse(text);
       } catch {
-        alert("上傳失敗：後端未回傳 JSON");
+        alert("上傳失敗：後端不是 JSON 回應");
         return;
       }
 
-      if (!json.file_name) {
-        alert("後端未回傳檔名，上傳失敗");
+      if (!json.data_id) {
+        alert("上傳失敗：後端未回傳 data_id");
         return;
       }
 
-      // ⭐ 上傳成功
       setFile({
         name: uploadedFile.name,
         size: (uploadedFile.size / 1024 / 1024).toFixed(2) + " MB",
@@ -150,9 +137,10 @@ export default function StartPredict({
       setRows(json.rows || null);
 
       localStorage.setItem("lastUploadedFile", json.file_name);
-    } catch (err) {
-      console.error(err);
-      alert("上傳失敗，後端無回應");
+      localStorage.setItem("lastDataId", json.data_id);
+    } catch (error) {
+      console.error("上傳錯誤：", error);
+      alert("上傳失敗，後端沒有回應");
     } finally {
       setProcessing(false);
     }
@@ -214,13 +202,11 @@ export default function StartPredict({
                 onChange={(e) => setSelectedSite(e.target.value)}
               >
                 <option value="">請選擇案場</option>
-
-                {Array.isArray(sites) &&
-                  sites.map((s) => (
-                    <option key={s.site_id} value={s.site_id}>
-                      {s.site_code} - {s.site_name}（{s.location}）
-                    </option>
-                  ))}
+                {sites.map((s) => (
+                  <option key={s.site_id} value={s.site_id}>
+                    {s.site_code} - {s.site_name}（{s.location}）
+                  </option>
+                ))}
               </select>
             </div>
           ) : (
@@ -259,7 +245,7 @@ export default function StartPredict({
           )}
         </div>
 
-        {/* Step 2：上傳檔案 */}
+        {/* Step 2 */}
         <div className="rounded-xl border border-white/10 bg-white/[.02] p-6 sm:p-8">
           <h2 className="text-xl font-bold mb-6">步驟二：上傳數據檔案</h2>
 
@@ -286,38 +272,35 @@ export default function StartPredict({
                 <strong>資料筆數：</strong> {rows} 筆
               </p>
 
-              <div>
-                <strong className="text-white/90">欄位列表：</strong>
-                <ul className="list-disc list-inside mt-2 text-white/70">
-                  {features.map((f, idx) => (
-                    <li key={idx}>{f}</li>
-                  ))}
-                </ul>
-              </div>
+              <strong className="text-white/90">欄位列表：</strong>
+              <ul className="list-disc list-inside mt-2 text-white/70">
+                {features.map((f, idx) => (
+                  <li key={idx}>{f}</li>
+                ))}
+              </ul>
             </div>
           )}
         </div>
       </main>
 
-      {/* 下一步 */}
       <div className="sticky bottom-0 w-full border-t border-white/10 bg-background-dark/90 p-4">
         <div className="max-w-4xl mx-auto flex justify-end">
           <button
             onClick={() => {
-              const stored = localStorage.getItem("lastUploadedFile");
-              const finalFileName = fileName || stored;
+              const finalFileName = fileName || localStorage.getItem("lastUploadedFile");
+              const dataId = localStorage.getItem("lastDataId");
 
               if (!selectedSite) {
                 alert("請選擇案場！");
                 return;
               }
 
-              if (!finalFileName) {
+              if (!finalFileName || !dataId) {
                 alert("請先上傳檔案！");
                 return;
               }
 
-              onNext(finalFileName);
+              onNext({ fileName: finalFileName, dataId });
             }}
             className="bg-primary px-8 py-2 rounded-lg font-bold"
           >
