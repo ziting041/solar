@@ -1,5 +1,5 @@
 // src/App.js
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 
 // ===== Public (未登入) =====
 import PublicHome from "./pages/PublicHome";
@@ -21,7 +21,7 @@ import CreateSiteModal from "./components/CreateSiteModal";
 export default function App() {
 
   // ==============================
-  // 狀態管理
+  // 狀態管理（⚠️ 不再自動登入）
   // ==============================
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
@@ -30,31 +30,8 @@ export default function App() {
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [isCreateSiteModalOpen, setIsCreateSiteModalOpen] = useState(false);
 
-  // ⭐ 目前所在頁面
   const [currentPage, setCurrentPage] = useState("home");
-
-  // ⭐ 存 StartPredict 傳來的 fileName / dataId
   const [predictInfo, setPredictInfo] = useState(null);
-
-
-  // ==============================
-  // 讀取 localStorage（保持登入狀態）
-  // ==============================
-  useEffect(() => {
-    const saved = localStorage.getItem("user");
-
-    if (!saved) return;
-
-    try {
-      const userObj = JSON.parse(saved);
-      setCurrentUser(userObj);
-      setIsLoggedIn(true);
-      setCurrentPage("dashboard");
-    } catch (err) {
-      console.error("⚠ localStorage user 格式錯誤：", err);
-      localStorage.removeItem("user");
-    }
-  }, []);
 
 
   // ==============================
@@ -78,7 +55,7 @@ export default function App() {
 
 
   // ==============================
-  // 登入成功
+  // 登入成功（⚠️ 只在此設定登入）
   // ==============================
   const handleLoginSuccess = (user) => {
     setIsLoggedIn(true);
@@ -160,7 +137,7 @@ export default function App() {
 
 
   // ==============================
-  // 未登入（首頁）
+  // 未登入（一定先進這裡）
   // ==============================
   if (!isLoggedIn) {
     return (
@@ -190,7 +167,7 @@ export default function App() {
 
 
   // ==============================
-  // 已登入：案場管理頁
+  // 已登入頁面
   // ==============================
   if (currentPage === "site") {
     return (
@@ -214,10 +191,6 @@ export default function App() {
     );
   }
 
-
-  // ==============================
-  // StartPredict（開始建立模型）
-  // ==============================
   if (currentPage === "start-predict") {
     return (
       <StartPredict
@@ -225,8 +198,6 @@ export default function App() {
         onNavigateToPredict={goPredict}
         onNavigateToSites={goSites}
         onLogout={handleLogout}
-
-        // ⭐ 把 StartPredict 回傳的 {dataId, fileName} 存起來
         onNext={(info) => {
           setPredictInfo(info);
           goDataCleaning();
@@ -235,16 +206,11 @@ export default function App() {
     );
   }
 
-
-  // ==============================
-  // DataCleaning（資料清理）
-  // ==============================
   if (currentPage === "data-cleaning") {
     return (
       <DataCleaning
-        dataId={predictInfo?.dataId}     // ⭐ 確保 dataId 正確傳入
+        dataId={predictInfo?.dataId}
         fileName={predictInfo?.fileName}
-
         onBack={goPredict}
         onNext={goUnitAdjustment}
         onNavigateToPredict={goPredict}
@@ -254,10 +220,6 @@ export default function App() {
     );
   }
 
-
-  // ==============================
-  // 後續流程
-  // ==============================
   if (currentPage === "unit-adjustment") {
     return (
       <UnitAdjustment
@@ -294,10 +256,6 @@ export default function App() {
     );
   }
 
-
-  // ==============================
-  // 預設：Dashboard
-  // ==============================
   return (
     <>
       <Dashboard

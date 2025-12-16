@@ -28,6 +28,21 @@ export default function StartPredict({
     return user.user_id || 0;
   };
 
+  // ==================== 頁面載入時恢復上次狀態 ====================
+  useEffect(() => {
+    const savedFileName = localStorage.getItem("lastUploadedFile");
+    const savedDataId = localStorage.getItem("lastDataId");
+    const savedFeatures = localStorage.getItem("lastFeatures");
+    const savedRows = localStorage.getItem("lastRows");
+    const savedSite = localStorage.getItem("lastSelectedSite");
+
+    if (savedFileName) setFileName(savedFileName);
+    if (savedFeatures) setFeatures(JSON.parse(savedFeatures));
+    if (savedRows) setRows(Number(savedRows));
+    if (savedSite) setSelectedSite(savedSite);
+  }, []);
+
+  // ==================== 載入案場列表 ====================
   useEffect(() => {
     const uid = getUserId();
     if (!uid) return;
@@ -46,6 +61,7 @@ export default function StartPredict({
     fetchSites();
   }, []);
 
+  // ==================== 建立新案場 ====================
   const createNewSite = async () => {
     const uid = getUserId();
     if (!newSiteName || !newSiteCode || !newLocation) {
@@ -87,6 +103,7 @@ export default function StartPredict({
     }
   };
 
+  // ==================== 上傳檔案 ====================
   const handleFileSelect = async (event) => {
     const uploadedFile = event.target.files[0];
     if (!uploadedFile) return;
@@ -136,8 +153,13 @@ export default function StartPredict({
       setFeatures(json.features || []);
       setRows(json.rows || null);
 
+      // ==================== 儲存狀態到 localStorage ====================
       localStorage.setItem("lastUploadedFile", json.file_name);
       localStorage.setItem("lastDataId", json.data_id);
+      localStorage.setItem("lastFeatures", JSON.stringify(json.features || []));
+      localStorage.setItem("lastRows", json.rows || "");
+      localStorage.setItem("lastSelectedSite", selectedSite);
+
     } catch (error) {
       console.error("上傳錯誤：", error);
       alert("上傳失敗，後端沒有回應");
@@ -151,10 +173,15 @@ export default function StartPredict({
     setFileName("");
     setFeatures([]);
     setRows(null);
+    localStorage.removeItem("lastUploadedFile");
+    localStorage.removeItem("lastDataId");
+    localStorage.removeItem("lastFeatures");
+    localStorage.removeItem("lastRows");
   };
 
   return (
     <div className="min-h-screen w-full bg-background-dark text-white flex flex-col">
+      {/* Navbar */}
       <Navbar
         activePage="predict"
         onNavigateToDashboard={onBack}
@@ -163,8 +190,36 @@ export default function StartPredict({
         onLogout={onLogout}
       />
 
+      {/* Step Header / Breadcrumb */}
+      <div className="w-full border-b border-white/10 bg-white/[.02] px-6 py-3 sticky top-[64px] sm:top-[65px] z-40 backdrop-blur-md">
+        <div className="mx-auto flex max-w-4xl items-center justify-between">
+          <button
+            onClick={onBack}
+            className="flex items-center gap-1 text-sm text-white/50 hover:text-white transition-colors"
+          >
+            <span className="material-symbols-outlined !text-lg">arrow_back</span>
+            返回儀表板
+          </button>
+
+          <div className="text-sm font-medium">
+            <span className="text-primary font-bold">1. 上傳資料</span>
+            <span className="mx-2 text-white/30">/</span>
+            <span className="text-white/40">2. 清理資料</span>
+            <span className="mx-2 text-white/30">/</span>
+            <span className="text-white/40">3. 調整單位</span>
+            <span className="mx-2 text-white/30">/</span>
+            <span className="text-white/40">4. 選擇模型</span>
+            <span className="mx-2 text-white/30">/</span>
+            <span className="text-white/40">5. 輸出結果</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
       <main className="flex-1 w-full max-w-4xl mx-auto p-6 py-8 flex flex-col gap-8">
-        <h1 className="text-3xl font-bold text-white">開始建立您的發電量預測模型</h1>
+        <h1 className="text-3xl font-bold text-white">
+          開始建立您的發電量預測模型
+        </h1>
 
         {/* Step 1 */}
         <div className="rounded-xl border border-white/10 bg-white/[.02] p-6 sm:p-8">
@@ -250,7 +305,12 @@ export default function StartPredict({
           <h2 className="text-xl font-bold mb-6">步驟二：上傳數據檔案</h2>
 
           <div className="relative mb-4 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-white/20 py-12 bg-white/[.01] text-center">
-            <input type="file" id="fileInput" className="hidden" onChange={handleFileSelect} />
+            <input
+              type="file"
+              id="fileInput"
+              className="hidden"
+              onChange={handleFileSelect}
+            />
 
             <label
               htmlFor="fileInput"
@@ -283,11 +343,13 @@ export default function StartPredict({
         </div>
       </main>
 
+      {/* Bottom Action Bar */}
       <div className="sticky bottom-0 w-full border-t border-white/10 bg-background-dark/90 p-4">
         <div className="max-w-4xl mx-auto flex justify-end">
           <button
             onClick={() => {
-              const finalFileName = fileName || localStorage.getItem("lastUploadedFile");
+              const finalFileName =
+                fileName || localStorage.getItem("lastUploadedFile");
               const dataId = localStorage.getItem("lastDataId");
 
               if (!selectedSite) {
@@ -302,7 +364,7 @@ export default function StartPredict({
 
               onNext({ fileName: finalFileName, dataId });
             }}
-            className="bg-primary px-8 py-2 rounded-lg font-bold"
+            className="bg-primary text-black px-8 py-2 rounded-lg font-bold"
           >
             下一步
           </button>
