@@ -11,6 +11,7 @@ export default function LoginModal({
 
   const login = async (e) => {
     e.preventDefault();
+    setMsg("");
 
     try {
       const res = await fetch("http://127.0.0.1:8000/auth/login", {
@@ -29,11 +30,11 @@ export default function LoginModal({
         return;
       }
 
-      // 儲存登入資料
+      // ✅ 儲存登入資料
       localStorage.setItem("user", JSON.stringify(data));
       localStorage.setItem("user_id", data.user_id);
 
-      alert("登入成功！");
+      // ✅ 不顯示 alert，直接交給父層轉頁
       onLoginSuccess?.(data);
       onClose?.();
 

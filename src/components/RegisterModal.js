@@ -8,6 +8,7 @@ export default function RegisterModal({ onClose, onSwitchToLogin }) {
 
   const register = async (e) => {
     e.preventDefault();
+    setMsg("");
 
     const payload = {
       user_name: name,
@@ -29,7 +30,9 @@ export default function RegisterModal({ onClose, onSwitchToLogin }) {
         return;
       }
 
-      setMsg("註冊成功！請返回登入");
+      // ✅ 註冊成功：直接切回登入 modal
+      onSwitchToLogin();
+
     } catch {
       setMsg("伺服器連線錯誤");
     }
@@ -91,8 +94,8 @@ export default function RegisterModal({ onClose, onSwitchToLogin }) {
         </form>
 
         <p className="text-white/60 mt-3 text-sm text-center">
-          已有帳號？{" "}
-          <button onClick={onSwitchToLogin} className="text-primary">
+          已有帳號？
+          <button onClick={onSwitchToLogin} className="text-primary ml-1">
             返回登入
           </button>
         </p>
