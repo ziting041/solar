@@ -1,12 +1,14 @@
-# main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import Base, engine
+
 # import models so SQLAlchemy knows table classes
 import models
+
 from routers.auth import router as auth_router
 from routers.site import router as site_router
 from routers.visualize import router as visualize_router
+from routers.data import router as data_router   # 🔥 新增
 
 # create tables if not exist
 Base.metadata.create_all(bind=engine)
@@ -21,9 +23,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth_router)      # routes prefixed by /auth (router defines prefix)
-app.include_router(site_router)      # routes prefixed by /site
-app.include_router(visualize_router) # routes prefixed by /visualize
+app.include_router(auth_router)
+app.include_router(site_router)
+app.include_router(visualize_router)
+app.include_router(data_router)   # 🔥 一定要有
 
 @app.get("/")
 def root():

@@ -33,6 +33,9 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState("home");
   const [predictInfo, setPredictInfo] = useState(null);
 
+  // ✅【關鍵】是否從「視覺化(DataCleaning)」返回
+  const [restoredFromVisualization, setRestoredFromVisualization] = useState(false);
+
 
   // ==============================
   // Modal 開關
@@ -55,7 +58,7 @@ export default function App() {
 
 
   // ==============================
-  // 登入成功（⚠️ 只在此設定登入）
+  // 登入成功
   // ==============================
   const handleLoginSuccess = (user) => {
     setIsLoggedIn(true);
@@ -74,6 +77,11 @@ export default function App() {
     setIsLoggedIn(false);
     setCurrentUser(null);
     localStorage.removeItem("user");
+
+    // ❌ 登出一定清空
+    setPredictInfo(null);
+    setRestoredFromVisualization(false);
+
     setCurrentPage("home");
   };
 
@@ -119,9 +127,27 @@ export default function App() {
     window.scrollTo(0, 0);
   };
 
-  const goDashboard = () => go("dashboard");
-  const goPredict = () => go("start-predict");
-  const goSites = () => go("site");
+  const goDashboard = () => {
+    setPredictInfo(null);
+    setRestoredFromVisualization(false);
+    go("dashboard");
+  };
+
+  const goPredict = () => {
+    // ✅ 只有「不是從視覺化回來」才清空
+    if (!restoredFromVisualization) {
+      setPredictInfo(null);
+    }
+    setRestoredFromVisualization(false);
+    go("start-predict");
+  };
+
+  const goSites = () => {
+    setPredictInfo(null);
+    setRestoredFromVisualization(false);
+    go("site");
+  };
+
   const goDataCleaning = () => go("data-cleaning");
   const goUnitAdjustment = () => go("unit-adjustment");
   const goModelTraining = () => go("model-training");
@@ -137,7 +163,7 @@ export default function App() {
 
 
   // ==============================
-  // 未登入（一定先進這裡）
+  // 未登入
   // ==============================
   if (!isLoggedIn) {
     return (
@@ -194,12 +220,14 @@ export default function App() {
   if (currentPage === "start-predict") {
     return (
       <StartPredict
+        restoredFromVisualization={restoredFromVisualization}
         onBack={goDashboard}
         onNavigateToPredict={goPredict}
         onNavigateToSites={goSites}
         onLogout={handleLogout}
         onNext={(info) => {
           setPredictInfo(info);
+          setRestoredFromVisualization(false);
           goDataCleaning();
         }}
       />
@@ -211,7 +239,11 @@ export default function App() {
       <DataCleaning
         dataId={predictInfo?.dataId}
         fileName={predictInfo?.fileName}
-        onBack={goPredict}
+        onBack={() => {
+          // ✅【唯一保留狀態的地方】
+          setRestoredFromVisualization(true);
+          goPredict();
+        }}
         onNext={goUnitAdjustment}
         onNavigateToPredict={goPredict}
         onNavigateToSites={goSites}

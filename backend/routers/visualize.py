@@ -216,3 +216,40 @@ def visualize_site_data(
         "boxplot_by_hour": boxplot_by_hour,
         "outlier_mask": outlier_mask.tolist(),
     })
+# =========================================================
+# 給 UnitAdjustment 用：取得最新一筆資料（第一筆 row）
+# =========================================================
+@router.get("/latest")
+def get_latest_site_data(db: Session = Depends(get_db)):
+    # 取最新上傳的一筆 site_data
+    entry = (
+        db.query(SiteData)
+        .order_by(SiteData.created_at.desc())
+        .first()
+    )
+
+    if not entry:
+        return {"columns": [], "rows": []}
+
+    payload = entry.processed_json or entry.json_data
+
+    if not payload:
+        return {"columns": [], "rows": []}
+
+    # payload 預期格式：
+    # {
+    #   "columns": [...],
+    #   "rows": [...]
+    # }
+
+    columns = payload.get("columns", [])
+    rows = payload.get("rows", [])
+
+    if not rows:
+        return {"columns": columns, "rows": []}
+
+    # ⚠️ 只回傳第一筆，UnitAdjustment 就夠用
+    return {
+        "columns": columns,
+        "rows": [rows[0]]
+    }

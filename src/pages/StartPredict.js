@@ -8,6 +8,9 @@ export default function StartPredict({
   onNavigateToPredict,
   onNavigateToSites,
   onLogout,
+
+  // ✅ 只有「視覺化頁返回」時才會傳進來
+  restoredFromVisualization = false,
 }) {
   const [activeTab, setActiveTab] = useState("existing");
   const [sites, setSites] = useState([]);
@@ -28,40 +31,61 @@ export default function StartPredict({
     return user.user_id || 0;
   };
 
-  // ==================== 頁面載入時恢復上次狀態 ====================
+  // 🔥【補齊】只清「預測流程」相關資料（不要用 localStorage.clear）
+  const clearPredictCache = () => {
+    localStorage.removeItem("lastUploadedFile");
+    localStorage.removeItem("lastDataId");
+    localStorage.removeItem("lastFeatures");
+    localStorage.removeItem("lastRows");
+    localStorage.removeItem("lastSelectedSite");
+  };
+
+  /* =================================================
+     🔥 關鍵：不是從「視覺化返回」→ 一律清空
+  ================================================= */
   useEffect(() => {
-    const savedFileName = localStorage.getItem("lastUploadedFile");
-    const savedDataId = localStorage.getItem("lastDataId");
-    const savedFeatures = localStorage.getItem("lastFeatures");
-    const savedRows = localStorage.getItem("lastRows");
-    const savedSite = localStorage.getItem("lastSelectedSite");
+    if (!restoredFromVisualization) {
+      clearPredictCache();
 
-    if (savedFileName) setFileName(savedFileName);
-    if (savedFeatures) setFeatures(JSON.parse(savedFeatures));
-    if (savedRows) setRows(Number(savedRows));
-    if (savedSite) setSelectedSite(savedSite);
-  }, []);
+      setFile(null);
+      setFileName("");
+      setFeatures([]);
+      setRows(null);
+      setSelectedSite("");
+    } else {
+      const savedFileName = localStorage.getItem("lastUploadedFile");
+      const savedFeatures = localStorage.getItem("lastFeatures");
+      const savedRows = localStorage.getItem("lastRows");
+      const savedSite = localStorage.getItem("lastSelectedSite");
 
-  // ==================== 載入案場列表 ====================
+      if (savedFileName) {
+        setFileName(savedFileName);
+
+        // 🔥 關鍵：補回 file，畫面才會顯示
+        setFile({
+          name: savedFileName,
+          size: "",
+          status: "上傳成功",
+        });
+      }
+      if (savedFeatures) setFeatures(JSON.parse(savedFeatures));
+      if (savedRows) setRows(Number(savedRows));
+      if (savedSite) setSelectedSite(savedSite);
+    }
+  }, [restoredFromVisualization]);
+
+  /* ==================== 載入案場列表 ==================== */
   useEffect(() => {
     const uid = getUserId();
     if (!uid) return;
 
-    const fetchSites = async () => {
-      try {
-        const res = await fetch(`http://127.0.0.1:8000/site/list?user_id=${uid}`);
-        const data = await res.json();
-        setSites(Array.isArray(data) ? data : []);
-      } catch (e) {
-        console.error("取得案場失敗：", e);
-        setSites([]);
-      }
-    };
-
-    fetchSites();
+    fetch(`http://127.0.0.1:8000/site/list?user_id=${uid}`)
+      .then((res) => res.json())
+      .then((data) => setSites(Array.isArray(data) ? data : []))
+      .catch(() => setSites([]));
   }, []);
 
-  // ==================== 建立新案場 ====================
+  /* ==================== 建立新案場（不動） ==================== */
   const createNewSite = async () => {
     const uid = getUserId();
     if (!newSiteName || !newSiteCode || !newLocation) {
@@ -69,18 +93,16 @@ export default function StartPredict({
       return;
     }
 
-    const payload = {
-      site_name: newSiteName,
-      site_code: newSiteCode,
-      location: newLocation,
-      user_id: uid,
-    };
-
     try {
       const res = await fetch("http://127.0.0.1:8000/site/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          site_name: newSiteName,
+          site_code: newSiteCode,
+          location: newLocation,
+          user_id: uid,
+        }),
       });
 
       const json = await res.json();
@@ -89,21 +111,20 @@ export default function StartPredict({
         return;
       }
 
-      alert("案場建立成功！");
-
-      const res2 = await fetch(`http://127.0.0.1:8000/site/list?user_id=${uid}`);
+      const res2 = await fetch(
+        `http://127.0.0.1:8000/site/list?user_id=${uid}`
+      );
       const siteList = await res2.json();
 
       setSites(siteList);
       setSelectedSite(json.site_id);
       setActiveTab("existing");
-    } catch (e) {
-      console.error(e);
+    } catch {
       alert("新增案場失敗");
     }
   };
 
-  // ==================== 上傳檔案 ====================
+  /* ==================== 上傳檔案 ==================== */
   const handleFileSelect = async (event) => {
     const uploadedFile = event.target.files[0];
     if (!uploadedFile) return;
@@ -114,7 +135,6 @@ export default function StartPredict({
     }
 
     const uid = getUserId();
-
     const formData = new FormData();
     formData.append("file", uploadedFile);
 
@@ -123,23 +143,12 @@ export default function StartPredict({
 
       const res = await fetch(
         `http://127.0.0.1:8000/site/upload-data?site_id=${selectedSite}&user_id=${uid}`,
-        {
-          method: "POST",
-          body: formData,
-        }
+        { method: "POST", body: formData }
       );
 
-      const text = await res.text();
-      let json;
-      try {
-        json = JSON.parse(text);
-      } catch {
-        alert("上傳失敗：後端不是 JSON 回應");
-        return;
-      }
-
+      const json = await res.json();
       if (!json.data_id) {
-        alert("上傳失敗：後端未回傳 data_id");
+        alert("上傳失敗");
         return;
       }
 
@@ -153,38 +162,25 @@ export default function StartPredict({
       setFeatures(json.features || []);
       setRows(json.rows || null);
 
-      // ==================== 儲存狀態到 localStorage ====================
+      // 🔥 只存，是否讀由「視覺化返回」決定
       localStorage.setItem("lastUploadedFile", json.file_name);
       localStorage.setItem("lastDataId", json.data_id);
       localStorage.setItem("lastFeatures", JSON.stringify(json.features || []));
       localStorage.setItem("lastRows", json.rows || "");
       localStorage.setItem("lastSelectedSite", selectedSite);
-
-    } catch (error) {
-      console.error("上傳錯誤：", error);
-      alert("上傳失敗，後端沒有回應");
     } finally {
       setProcessing(false);
     }
   };
 
-  const handleRemoveFile = () => {
-    setFile(null);
-    setFileName("");
-    setFeatures([]);
-    setRows(null);
-    localStorage.removeItem("lastUploadedFile");
-    localStorage.removeItem("lastDataId");
-    localStorage.removeItem("lastFeatures");
-    localStorage.removeItem("lastRows");
-  };
-
   return (
     <div className="min-h-screen w-full bg-background-dark text-white flex flex-col">
-      {/* Navbar */}
       <Navbar
         activePage="predict"
-        onNavigateToDashboard={onBack}
+        onNavigateToDashboard={() => {
+          clearPredictCache();
+          onBack();
+        }}
         onNavigateToPredict={onNavigateToPredict}
         onNavigateToSites={onNavigateToSites}
         onLogout={onLogout}
