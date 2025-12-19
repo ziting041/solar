@@ -21,3 +21,8 @@ class ProcessRequest(BaseModel):
     data_id: int
     method: str                 # 'iqr' | 'zscore' | 'isolation_forest' | 'default'
     params: Optional[Dict[str, Any]] = None
+
+class UpdateSite(BaseModel):
+    site_code: str | None = None
+    site_name: str | None = None
+    location: str | None = None

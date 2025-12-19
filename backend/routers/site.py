@@ -7,15 +7,28 @@ from datetime import datetime
 
 from database import get_db
 from models import Site, SiteData, User
-from schemas import CreateSite
+from schemas import CreateSite,UpdateSite
 
 router = APIRouter(prefix="/site", tags=["Site"])
 
 @router.get("/list")
 def list_sites(user_id: int, db: Session = Depends(get_db)):
-    sites = db.query(Site).filter(Site.user_id == user_id).order_by(Site.created_at.desc()).all()
+    sites = (
+        db.query(Site)
+        .filter(Site.user_id == user_id)
+        .order_by(Site.created_at.desc())
+        .all()
+    )
+
     return [
-        {"site_id": s.site_id, "site_code": s.site_code, "site_name": s.site_name, "location": s.location, "created_at": s.created_at.isoformat(), "user_id": s.user_id}
+        {
+            "site_id": s.site_id,
+            "site_code": s.site_code,
+            "site_name": s.site_name,
+            "location": s.location,
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "user_id": s.user_id,
+        }
         for s in sites
     ]
 
@@ -89,3 +102,29 @@ def download_data(data_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="no file stored")
     # 這裡回傳 metadata; 若要下載 file bytes 作流式傳輸可以改成 StreamingResponse
     return {"file_name": entry.data_name, "size": len(entry.file_bytes)}
+
+@router.put("/{site_id}")
+def update_site(
+    site_id: int,
+    payload: UpdateSite,
+    db: Session = Depends(get_db),
+):
+    site = db.query(Site).filter(Site.site_id == site_id).first()
+
+    if not site:
+        raise HTTPException(status_code=404, detail="site not found")
+
+    site.site_code = payload.site_code
+    site.site_name = payload.site_name
+    site.location = payload.location
+
+    db.commit()
+    db.refresh(site)
+
+    return {
+        "message": "site updated",
+        "site_id": site.site_id,
+        "site_code": site.site_code,
+        "site_name": site.site_name,
+        "location": site.location,
+    }

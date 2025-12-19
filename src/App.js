@@ -16,29 +16,36 @@ import ModelTraining from "./pages/ModelTraining";
 import PredictionReport from "./pages/PredictionReport";
 import UserGuide from "./pages/UserGuide";
 
+// ===== Modals =====
 import CreateSiteModal from "./components/CreateSiteModal";
+import EditSiteModal from "./components/EditSiteModal"; // ✅ 新增
 
 export default function App() {
-
   // ==============================
-  // 狀態管理（⚠️ 不再自動登入）
+  // 登入狀態
   // ==============================
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
 
+  // ==============================
+  // Modal 狀態
+  // ==============================
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [isCreateSiteModalOpen, setIsCreateSiteModalOpen] = useState(false);
 
-  const [currentPage, setCurrentPage] = useState("home");
-  const [predictInfo, setPredictInfo] = useState(null);
-
-  // ✅【關鍵】是否從「視覺化(DataCleaning)」返回
-  const [restoredFromVisualization, setRestoredFromVisualization] = useState(false);
-
+  const [editingSite, setEditingSite] = useState(null); // ✅ 編輯案場用
 
   // ==============================
-  // Modal 開關
+  // 導航 & 預測流程
+  // ==============================
+  const [currentPage, setCurrentPage] = useState("home");
+  const [predictInfo, setPredictInfo] = useState(null);
+  const [restoredFromVisualization, setRestoredFromVisualization] =
+    useState(false);
+
+  // ==============================
+  // Modal 控制
   // ==============================
   const openLogin = () => setIsLoginModalOpen(true);
   const closeLogin = () => setIsLoginModalOpen(false);
@@ -56,9 +63,8 @@ export default function App() {
     setIsLoginModalOpen(true);
   };
 
-
   // ==============================
-  // 登入成功
+  // 登入 / 登出
   // ==============================
   const handleLoginSuccess = (user) => {
     setIsLoggedIn(true);
@@ -69,34 +75,24 @@ export default function App() {
     setCurrentPage("dashboard");
   };
 
-
-  // ==============================
-  // 登出
-  // ==============================
   const handleLogout = () => {
     setIsLoggedIn(false);
     setCurrentUser(null);
     localStorage.removeItem("user");
 
-    // ❌ 登出一定清空
     setPredictInfo(null);
     setRestoredFromVisualization(false);
-
     setCurrentPage("home");
   };
 
-
   // ==============================
-  // 新增案場 Modal
+  // 新增案場
   // ==============================
   const openCreateSite = () => setIsCreateSiteModalOpen(true);
   const closeCreateSite = () => setIsCreateSiteModalOpen(false);
 
   const submitCreateSite = async (formData) => {
-    if (!currentUser) {
-      alert("請先登入！");
-      return;
-    }
+    if (!currentUser) return;
 
     const res = await fetch("http://127.0.0.1:8000/site/create", {
       method: "POST",
@@ -107,17 +103,22 @@ export default function App() {
       }),
     });
 
-    const data = await res.json();
-
-    if (!res.ok) {
-      alert("新增失敗：" + data.detail);
-      return;
+    if (res.ok) {
+      setIsCreateSiteModalOpen(false);
+      window.dispatchEvent(new Event("site-updated"));
     }
-
-    alert("案場新增成功！");
-    setIsCreateSiteModalOpen(false);
   };
 
+  // ==============================
+  // ✏️ 編輯案場（🔥 關鍵新增）
+  // ==============================
+  const openEditSite = (site) => {
+    setEditingSite(site);
+  };
+
+  const closeEditSite = () => {
+    setEditingSite(null);
+  };
 
   // ==============================
   // 導航
@@ -134,7 +135,6 @@ export default function App() {
   };
 
   const goPredict = () => {
-    // ✅ 只有「不是從視覺化回來」才清空
     if (!restoredFromVisualization) {
       setPredictInfo(null);
     }
@@ -153,14 +153,31 @@ export default function App() {
   const goModelTraining = () => go("model-training");
   const goReport = () => go("report");
 
+  const submitEditSite = async (data) => {
+    try {
+      const res = await fetch(
+        `http://127.0.0.1:8000/site/${data.site_id}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        }
+      );
 
+      if (res.ok) {
+        setEditingSite(null);
+        window.dispatchEvent(new Event("site-updated"));
+      }
+    } catch (err) {
+      console.error("更新案場失敗", err);
+    }
+  };
   // ==============================
   // 教學頁
   // ==============================
   if (currentPage === "user-guide") {
     return <UserGuide onFinish={() => go("home")} />;
   }
-
 
   // ==============================
   // 未登入
@@ -191,9 +208,8 @@ export default function App() {
     );
   }
 
-
   // ==============================
-  // 已登入頁面
+  // 案場頁（🔥 這裡一定要傳 onOpenEditSite）
   // ==============================
   if (currentPage === "site") {
     return (
@@ -201,6 +217,7 @@ export default function App() {
         <Sites
           user={currentUser}
           onOpenCreateSite={openCreateSite}
+          onOpenEditSite={openEditSite}   // ✅ 關鍵修正
           onNavigateToDashboard={goDashboard}
           onNavigateToPredict={goPredict}
           onNavigateToSites={goSites}
@@ -213,10 +230,21 @@ export default function App() {
             onSubmit={submitCreateSite}
           />
         )}
+
+        {editingSite && (
+          <EditSiteModal
+            site={editingSite}
+            onClose={closeEditSite}
+            onSubmit={submitEditSite}
+          />
+        )}
       </>
     );
   }
 
+  // ==============================
+  // 預測流程（以下原封不動）
+  // ==============================
   if (currentPage === "start-predict") {
     return (
       <StartPredict
@@ -240,7 +268,6 @@ export default function App() {
         dataId={predictInfo?.dataId}
         fileName={predictInfo?.fileName}
         onBack={() => {
-          // ✅【唯一保留狀態的地方】
           setRestoredFromVisualization(true);
           goPredict();
         }}
@@ -288,6 +315,9 @@ export default function App() {
     );
   }
 
+  // ==============================
+  // Dashboard
+  // ==============================
   return (
     <>
       <Dashboard

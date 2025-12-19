@@ -1,6 +1,7 @@
-// src/pages/Sites.js
 import React, { useState, useEffect } from "react";
 import Navbar from "../components/Navbar";
+
+const API_BASE_URL = "http://127.0.0.1:8000";
 
 export default function Sites({
   onNavigateToDashboard,
@@ -8,59 +9,52 @@ export default function Sites({
   onNavigateToSites,
   onLogout,
   onOpenCreateSite,
+  onOpenEditSite,
   user,
 }) {
   const [sites, setSites] = useState([]);
   const [expandedSiteId, setExpandedSiteId] = useState(null);
   const [selectedSiteIds, setSelectedSiteIds] = useState([]);
+  const [confirmSiteId, setConfirmSiteId] = useState(null);
+  const [confirmBatchDelete, setConfirmBatchDelete] = useState(false); // ✅ 新增
 
-  // --------------------------------------
-  // 🟦 進入頁面時：向後端讀取案場列表
-  // --------------------------------------
+  /* ===============================
+     讀取案場列表
+  =============================== */
   useEffect(() => {
     if (!user) return;
 
-    const fetchSites = async () => {
-      try {
-        const res = await fetch(
-          `http://127.0.0.1:8000/site/list?user_id=${user.user_id}`
-        );
-
-        const data = await res.json();
-        console.log("讀到案場列表:", data);
-
-        setSites(data);
-      } catch (err) {
-        console.error("讀取案場列表失敗:", err);
-      }
+    const loadSites = () => {
+      fetch(`${API_BASE_URL}/site/list?user_id=${user.user_id}`)
+        .then((res) => res.json())
+        .then(setSites)
+        .catch(console.error);
     };
 
-    fetchSites();
+    loadSites();
+    window.addEventListener("site-updated", loadSites);
+
+    return () => {
+      window.removeEventListener("site-updated", loadSites);
+    };
   }, [user]);
 
-  // 展開 / 收合卡片
   const toggleExpand = (id) => {
     setExpandedSiteId(expandedSiteId === id ? null : id);
   };
 
-  // 勾選案場
   const toggleSelect = (id) => {
-    if (selectedSiteIds.includes(id)) {
-      setSelectedSiteIds(selectedSiteIds.filter((x) => x !== id));
-    } else {
-      setSelectedSiteIds([...selectedSiteIds, id]);
-    }
+    setSelectedSiteIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
   };
 
-  // 批次刪除（前端）
+  /* ===============================
+     批次刪除（只開 Modal）
+  =============================== */
   const handleBatchDelete = () => {
-    const confirmDelete = window.confirm(
-      `確定刪除 ${selectedSiteIds.length} 個案場？`
-    );
-    if (!confirmDelete) return;
-
-    setSites(sites.filter((s) => !selectedSiteIds.includes(s.site_id)));
-    setSelectedSiteIds([]);
+    if (selectedSiteIds.length === 0) return;
+    setConfirmBatchDelete(true);
   };
 
   return (
@@ -73,55 +67,56 @@ export default function Sites({
         onLogout={onLogout}
       />
 
-      {/* 主要內容 */}
       <main className="flex-1 w-full max-w-7xl mx-auto p-6 py-10">
-        {/* 標題 + 新增按鈕 */}
+        {/* Header */}
         <div className="flex items-center justify-between mb-8">
-          <h1 className="text-3xl font-bold text-white">我的案場管理</h1>
+          <h1 className="text-3xl font-bold">我的案場管理</h1>
 
           <button
             onClick={onOpenCreateSite}
-            className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-background-dark transition-transform hover:scale-105"
+            className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-background-dark hover:scale-105 transition"
           >
-            <span className="material-symbols-outlined !text-xl">add</span>
+            <span className="material-symbols-outlined">add</span>
             新增案場
           </button>
         </div>
 
-        {/* 案場列表 */}
+        {/* List */}
         <div className="flex flex-col gap-4">
-          {sites.length === 0 && (
-            <p className="text-white/60 text-sm">
-              目前沒有案場，請建立一個新案場。
-            </p>
-          )}
-
           {sites.map((site) => (
             <div
               key={site.site_id}
-              className={`rounded-xl border transition-all duration-300 ${
+              className={`rounded-xl border transition ${
                 expandedSiteId === site.site_id
                   ? "border-primary/50 bg-white/[.02]"
-                  : "border-white/10 bg-white/[.01] hover:bg-white/[.03]"
+                  : "border-white/10 bg-white/[.01]"
               }`}
             >
               {/* 卡片標頭 */}
-              <div className="flex items-center justify-between p-4 sm:p-6">
+              <div className="flex items-center justify-between p-6">
                 <div className="flex items-center gap-6">
-                  {/* 勾選 */}
+                  {/* Checkbox */}
                   <div className="relative flex items-center">
                     <input
                       type="checkbox"
                       checked={selectedSiteIds.includes(site.site_id)}
                       onChange={() => toggleSelect(site.site_id)}
-                      className="peer size-5 cursor-pointer appearance-none rounded border border-white/30 bg-transparent checked:border-primary checked:bg-primary transition-all"
+                      className="peer size-5 cursor-pointer appearance-none rounded
+                                border border-white/30 bg-transparent
+                                checked:border-primary checked:bg-primary"
                     />
-                    <span className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-background-dark opacity-0 peer-checked:opacity-100 material-symbols-outlined !text-base font-bold">
+                    <span
+                      className="pointer-events-none material-symbols-outlined
+                                absolute left-1/2 top-1/2
+                                -translate-x-1/2 -translate-y-1/2
+                                text-background-dark opacity-0
+                                peer-checked:opacity-100
+                                !text-base font-bold"
+                    >
                       check
                     </span>
                   </div>
 
-                  {/* Icon + 資訊 */}
                   <div className="flex items-center gap-4">
                     <div className="flex size-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
                       <span className="material-symbols-outlined !text-3xl">
@@ -131,67 +126,68 @@ export default function Sites({
 
                     <div>
                       <h3 className="text-lg font-bold">{site.site_name}</h3>
-                      <p className="text-sm text-white/50">{site.location}</p>
+                      <p className="text-sm text-white/50">
+                        {site.location}
+                      </p>
                     </div>
                   </div>
                 </div>
 
-                {/* 動作按鈕 */}
-                <div className="flex items-center gap-2">
-                  <button className="flex size-10 items-center justify-center rounded-full text-white/50 hover:bg-white/10 hover:text-white transition-colors">
-                    <span className="material-symbols-outlined !text-xl">
-                      edit
-                    </span>
+                {/* 操作 */}
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => onOpenEditSite?.(site)}
+                    className="material-symbols-outlined text-white/60 hover:text-primary transition"
+                  >
+                    edit
                   </button>
 
                   <button
                     onClick={() => toggleExpand(site.site_id)}
-                    className={`flex size-10 items-center justify-center rounded-full text-white/50 hover:bg-white/10 hover:text-white transition-transform duration-300 ${
+                    className={`material-symbols-outlined transition ${
                       expandedSiteId === site.site_id ? "rotate-180" : ""
                     }`}
                   >
-                    <span className="material-symbols-outlined !text-2xl">
-                      expand_more
-                    </span>
+                    expand_more
                   </button>
                 </div>
               </div>
 
-              {/* 展開內容 */}
+              {/* 展開 */}
               {expandedSiteId === site.site_id && (
-                <div className="border-t border-white/10 bg-white/[.02] p-6">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div className="border-t border-white/10 p-6">
+                  <div className="grid md:grid-cols-3 gap-6 mb-6">
                     <div>
-                      <p className="text-xs text-white/40 mb-1">案場代號</p>
-                      <p className="text-sm font-mono">{site.site_code}</p>
+                      <p className="text-xs text-white/40">地點</p>
+                      <p>{site.location}</p>
                     </div>
 
                     <div>
-                      <p className="text-xs text-white/40 mb-1">建立日期</p>
-                      <p className="text-sm font-mono">
-                        {site.created_at?.slice(0, 10)}
+                      <p className="text-xs text-white/40">案場代號</p>
+                      <p className="font-mono">{site.site_code}</p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-white/40">建立時間</p>
+                      <p className="font-mono">
+                        {new Date(site.created_at).toLocaleDateString("zh-TW")}
                       </p>
-                    </div>
-
-                    <div>
-                      <p className="text-xs text-white/40 mb-1">使用者 ID</p>
-                      <p className="text-sm font-mono">{site.user_id}</p>
                     </div>
                   </div>
 
-                  <div className="mt-6 flex justify-end gap-3">
-                    <button className="px-4 py-2 rounded border border-white/10 text-xs text-white/60 hover:text-red-400 hover:border-red-400/50 transition-colors">
+                  <div className="flex justify-end gap-3">
+                    <button
+                      onClick={() => setConfirmSiteId(site.site_id)}
+                      className="px-4 py-2 text-xs border border-red-400/50 text-red-400 rounded"
+                    >
                       刪除案場
                     </button>
 
                     <button
                       onClick={onNavigateToPredict}
-                      className="px-4 py-2 rounded bg-white/10 text-xs font-bold hover:bg-white/20 transition-colors flex items-center gap-2"
+                      className="px-4 py-2 text-xs bg-white/10 rounded"
                     >
-                      以此案場開始預測
-                      <span className="material-symbols-outlined !text-sm">
-                        arrow_forward
-                      </span>
+                      以此案場開始預測 →
                     </button>
                   </div>
                 </div>
@@ -201,25 +197,136 @@ export default function Sites({
         </div>
       </main>
 
-      {/* Sticky Footer：批次刪除 */}
+      {/* 單筆刪除 Modal */}
+      {confirmSiteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-[#1E1E1E] rounded-xl p-6 w-full max-w-sm">
+            <h3 className="text-lg font-bold mb-2">確認刪除</h3>
+            <p className="text-sm text-white/60 mb-6">
+              確定要刪除此案場嗎？此操作無法復原。
+            </p>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setConfirmSiteId(null)}
+                className="px-4 py-2 bg-white/10 rounded"
+              >
+                取消
+              </button>
+
+              <button
+                onClick={async () => {
+                  await fetch(`${API_BASE_URL}/site/${confirmSiteId}`, {
+                    method: "DELETE",
+                  });
+                  setSites((prev) =>
+                    prev.filter((s) => s.site_id !== confirmSiteId)
+                  );
+                  setConfirmSiteId(null);
+                }}
+                className="px-4 py-2 bg-red-500 rounded font-bold"
+              >
+                確定刪除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ 批次刪除 Modal（重點） */}
+      {confirmBatchDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-[#1E1E1E] rounded-xl p-6 w-full max-w-sm">
+            <h3 className="text-lg font-bold mb-2 text-red-400">
+              確認批次刪除
+            </h3>
+
+            <p className="text-sm text-white/60 mb-6">
+              確定要刪除
+              <span className="text-primary font-bold mx-1">
+                {selectedSiteIds.length}
+              </span>
+              個案場嗎？<br />
+              此操作無法復原。
+            </p>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setConfirmBatchDelete(false)}
+                className="px-4 py-2 bg-white/10 rounded"
+              >
+                取消
+              </button>
+
+              <button
+                onClick={async () => {
+                  await Promise.all(
+                    selectedSiteIds.map((id) =>
+                      fetch(`${API_BASE_URL}/site/${id}`, {
+                        method: "DELETE",
+                      })
+                    )
+                  );
+
+                  setSites((prev) =>
+                    prev.filter(
+                      (s) => !selectedSiteIds.includes(s.site_id)
+                    )
+                  );
+                  setSelectedSiteIds([]);
+                  setConfirmBatchDelete(false);
+                }}
+                className="px-4 py-2 bg-red-500 rounded font-bold"
+              >
+                確定刪除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 3. Footer */}
+      <footer className="mt-24 flex w-full justify-center border-t border-solid border-white/10">
+        <div className="flex w-full max-w-7xl flex-col items-center justify-between gap-4 px-4 py-6 sm:flex-row sm:px-10">
+          <p className="text-white/50 text-sm">© 2024 日光預. All rights reserved.</p>
+          <div className="flex items-center gap-6">
+            <a className="text-white/50 hover:text-white/80 text-sm font-normal leading-normal transition-colors" href="#">服務條款</a>
+            <a className="text-white/50 hover:text-white/80 text-sm font-normal leading-normal transition-colors" href="#">隱私權政策</a>
+          </div>
+        </div>
+      </footer>
+      {/* Sticky Footer */}
       {selectedSiteIds.length > 0 && (
         <div className="sticky bottom-0 w-full border-t border-white/10 bg-[#1E1E1E] p-4 px-6 z-40 shadow-2xl">
           <div className="mx-auto flex max-w-7xl items-center justify-between">
             <div className="text-sm">
-              已選取{" "}
-              <span className="text-primary font-bold">
+              已選取
+              <span className="text-primary font-bold mx-1">
                 {selectedSiteIds.length}
-              </span>{" "}
+              </span>
               個案場
             </div>
 
-            <button
-              onClick={handleBatchDelete}
-              className="flex items-center justify-center gap-2 rounded-lg border border-red-500/50 text-red-400 px-6 py-2 text-sm font-bold hover:bg-red-500/10 transition-colors"
-            >
-              <span className="material-symbols-outlined !text-lg">delete</span>
-              批次刪除
-            </button>
+            {selectedSiteIds.length > 1 ? (
+              <button
+                onClick={handleBatchDelete}
+                className="flex items-center gap-2 rounded-lg border border-red-500/50 text-red-400 px-6 py-2 text-sm font-bold hover:bg-red-500/10"
+              >
+                <span className="material-symbols-outlined !text-lg">
+                  delete
+                </span>
+                批次刪除
+              </button>
+            ) : (
+              <button
+                onClick={onNavigateToPredict}
+                className="flex items-center gap-2 rounded-lg bg-primary px-6 py-2 text-sm font-bold text-background-dark hover:scale-105"
+              >
+                <span className="material-symbols-outlined !text-lg">
+                  play_arrow
+                </span>
+                開始預測
+              </button>
+            )}
           </div>
         </div>
       )}
