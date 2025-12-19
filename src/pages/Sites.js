@@ -216,13 +216,47 @@ export default function Sites({
 
               <button
                 onClick={async () => {
-                  await fetch(`${API_BASE_URL}/site/${confirmSiteId}`, {
-                    method: "DELETE",
-                  });
-                  setSites((prev) =>
-                    prev.filter((s) => s.site_id !== confirmSiteId)
-                  );
-                  setConfirmSiteId(null);
+                  console.log("API_BASE_URL =", API_BASE_URL);
+                  console.log("confirmSiteId =", confirmSiteId);
+
+                  if (!confirmSiteId) {
+                    alert("confirmSiteId 是空的");
+                    return;
+                  }
+
+                  try {
+                    const url = `${API_BASE_URL}/site/${confirmSiteId}`;
+                    console.log("DELETE URL =", url);
+
+                    const res = await fetch(url, {
+                      method: "DELETE",
+                      headers: {
+                        "Content-Type": "application/json",
+                      },
+                    });
+
+                    console.log("DELETE status =", res.status);
+
+                    if (!res.ok) {
+                      const text = await res.text();
+                      console.error("DELETE failed:", text);
+                      alert(`刪除失敗 (${res.status})`);
+                      return;
+                    }
+
+                    const data = await res.json();
+                    console.log("DELETE success:", data);
+
+                    // ✅ 只有後端真的成功，才更新前端
+                    setSites((prev) =>
+                      prev.filter((s) => s.site_id !== confirmSiteId)
+                    );
+                    setConfirmSiteId(null);
+
+                  } catch (err) {
+                    console.error("FETCH ERROR:", err);
+                    alert("fetch 失敗，請看 console");
+                  }
                 }}
                 className="px-4 py-2 bg-red-500 rounded font-bold"
               >
@@ -260,21 +294,32 @@ export default function Sites({
 
               <button
                 onClick={async () => {
-                  await Promise.all(
-                    selectedSiteIds.map((id) =>
-                      fetch(`${API_BASE_URL}/site/${id}`, {
-                        method: "DELETE",
-                      })
-                    )
-                  );
+                  try {
+                    await Promise.all(
+                      selectedSiteIds.map(async (id) => {
+                        const res = await fetch(`${API_BASE_URL}/site/${id}`, {
+                          method: "DELETE",
+                          headers: {
+                            "Content-Type": "application/json",
+                          },
+                        });
 
-                  setSites((prev) =>
-                    prev.filter(
-                      (s) => !selectedSiteIds.includes(s.site_id)
-                    )
-                  );
-                  setSelectedSiteIds([]);
-                  setConfirmBatchDelete(false);
+                        if (!res.ok) {
+                          throw new Error(`刪除失敗 site_id=${id}`);
+                        }
+                      })
+                    );
+
+                    setSites((prev) =>
+                      prev.filter((s) => !selectedSiteIds.includes(s.site_id))
+                    );
+                    setSelectedSiteIds([]);
+                    setConfirmBatchDelete(false);
+
+                  } catch (err) {
+                    console.error(err);
+                    alert("批次刪除失敗，請看 console");
+                  }
                 }}
                 className="px-4 py-2 bg-red-500 rounded font-bold"
               >

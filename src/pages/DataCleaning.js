@@ -1,436 +1,618 @@
 // src/pages/DataCleaning.js
 import React, { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
-
-/* Chart.js core */
 import {
   Chart as ChartJS,
+  PointElement,
   CategoryScale,
   LinearScale,
-  PointElement,
-  BarElement,
   Tooltip,
   Legend,
 } from "chart.js";
+import { Scatter } from "react-chartjs-2";
 
-/* Boxplot 插件 */
-import { BoxPlotController, BoxAndWiskers } from "@sgratzl/chartjs-chart-boxplot";
+ChartJS.register(PointElement, CategoryScale, LinearScale, Tooltip, Legend);
 
-import { Scatter, Bar, Chart } from "react-chartjs-2";
+// 小型直方圖 SVG
+function HistogramSVG({ bins = [], counts = [], height = 140 }) {
+  if (!bins || bins.length < 2 || !counts?.length) {
+    return <div className="text-white/40 text-xs">無資料</div>;
+  }
+  const maxCount = Math.max(...counts, 1);
+  const barCount = counts.length;
+  const width = 120;
+  const barWidth = width / barCount;
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  BarElement,
-  Tooltip,
-  Legend,
-  BoxPlotController,
-  BoxAndWiskers
-);
+  return (
+    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+      <rect x="0" y="0" width={width} height={height} fill="none" />
+      {counts.map((c, i) => {
+        const h = (c / maxCount) * (height - 20);
+        const x = i * barWidth + 1;
+        const y = height - h - 2;
+        return (
+          <rect
+            key={i}
+            x={x}
+            y={y}
+            width={Math.max(1, barWidth - 2)}
+            height={h}
+            fill="#60a5fa"
+            opacity="0.8"
+            rx="1"
+          />
+        );
+      })}
+    </svg>
+  );
+}
 
-/* 卡片元件（點擊放大） */
-const ChartCard = ({ title, children, onClick }) => (
-  <div
-    className="rounded-xl border border-white/10 bg-white/[.02] p-4 cursor-pointer hover:border-primary/50 transition-all"
-    onClick={onClick}
-  >
-    <div className="text-sm text-white/70 mb-2">{title}</div>
-    <div className="h-56">{children}</div>
-  </div>
-);
+// 箱型圖 SVG（支援排序 + 彩虹漸層顏色，匹配圖片）
+function BoxplotSVG({ groups = {}, width = 900, height = 400 }) {
+  const keys = Object.keys(groups)
+    .map(Number)
+    .sort((a, b) => a - b)
+    .map(String); // 確保月/日/時排序正確
 
-/* ScatterChart（實心點，TM vs GI / GI vs TM 不顯示離群值） */
-const ScatterChart = ({ x, y, xLabel, yLabel, outlierMask, title }) => {
-  if (!x || !y || !outlierMask) return <div className="text-xs text-white/40">無資料</div>;
-
-  const isTMGI = title === "TM vs GI" || title === "GI vs TM";
-
-  const normal = [];
-  const outlier = [];
-
-  x.forEach((vx, i) => {
-    if (y[i] == null) return;
-    const p = { x: vx, y: y[i], idx: i };
-    if (!isTMGI && outlierMask[i]) outlier.push(p);
-    else normal.push(p);
-  });
-
-  const datasets = [
-    {
-      label: "正常值",
-      data: normal,
-      backgroundColor: "#60a5fa",
-      pointRadius: 4,
-      pointHoverRadius: 7,
-    },
-  ];
-
-  if (!isTMGI && outlier.length > 0) {
-    datasets.push({
-      label: "離群值",
-      data: outlier,
-      backgroundColor: "#ef4444",
-      pointRadius: 6,
-      pointHoverRadius: 9,
-    });
+  if (keys.length === 0) {
+    return <div className="text-white/40 text-lg">無分組資料</div>;
   }
 
-  return (
-    <Scatter
-      data={{ datasets }}
-      options={{
-        maintainAspectRatio: false,
-        responsive: true,
-        plugins: {
-          legend: { display: true, position: "top", labels: { color: "#ccc", usePointStyle: true, padding: 15 } },
-          tooltip: {
-            callbacks: {
-              label: (ctx) => {
-                const p = ctx.raw;
-                return [
-                  `第 ${p.idx + 1} 筆`,
-                  `${xLabel}: ${p.x.toFixed(2)}`,
-                  `${yLabel}: ${p.y.toFixed(2)}`,
-                  (!isTMGI && outlierMask[p.idx]) ? "⚠️ 離群值" : "正常值",
-                ];
-              },
-            },
-          },
-        },
-        scales: {
-          x: { title: { display: true, text: xLabel, color: "#ccc" }, ticks: { color: "#ccc" } },
-          y: { title: { display: true, text: yLabel, color: "#ccc" }, ticks: { color: "#ccc" } },
-        },
-      }}
-    />
-  );
-};
-
-/* Histogram（單色藍） */
-const Histogram = ({ values }) => {
-  if (!values || values.length === 0) return <div className="text-xs text-white/40">無資料</div>;
-
-  const bins = 15;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const step = (max - min) / bins || 1;
-
-  const counts = Array(bins).fill(0);
-  values.forEach((v) => {
-    const i = Math.min(Math.floor((v - min) / step), bins - 1);
-    counts[i]++;
+  let allVals = [];
+  keys.forEach((k) => {
+    const g = groups[k];
+    if (g) allVals.push(g.min, g.q1, g.median, g.q3, g.max);
   });
+  const vmin = Math.min(...allVals);
+  const vmax = Math.max(...allVals);
+  const pad = (vmax - vmin) * 0.06 || 1;
+  const rangeMin = vmin - pad;
+  const rangeMax = vmax + pad;
+
+  const mapY = (v) => {
+    const hv = height - 60;
+    return 30 + hv - ((v - rangeMin) / (rangeMax - rangeMin)) * hv;
+  };
+
+  const boxW = Math.max(12, (width - 80) / keys.length * 0.6);
 
   return (
-    <Bar
-      data={{
-        labels: counts.map((_, i) => `${(min + i * step).toFixed(1)}`),
-        datasets: [{ label: "筆數", data: counts, backgroundColor: "#60a5fa", borderColor: "#3b82f6", borderWidth: 1 }],
-      }}
-      options={{
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: { y: { beginAtZero: true, ticks: { color: "#ccc" } }, x: { ticks: { color: "#ccc" } } },
-      }}
-    />
+    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet">
+      <rect x="0" y="0" width={width} height={height} fill="none" />
+      {keys.map((k, i) => {
+        const g = groups[k];
+        if (!g) return null;
+
+        // 計算彩虹顏色：基於 i / keys.length 的 HSL（藍→橙→綠→紅→紫→粉）
+        const hue = (i / (keys.length - 1)) * 300; // 從 0 (藍) 到 300 (粉紅)，調整範圍以匹配圖片
+        const boxColor = `hsl(${hue}, 80%, 60%)`; // 飽和80%、亮度60% 產生鮮豔漸層
+        const lineColor = `hsl(${hue}, 70%, 40%)`; // 較暗版用於線條/中位線
+
+        const cx = 40 + i * ((width - 80) / keys.length) + ((width - 80) / keys.length) / 2;
+        const q1y = mapY(g.q1);
+        const q3y = mapY(g.q3);
+        const medy = mapY(g.median);
+        const miny = mapY(g.min);
+        const maxy = mapY(g.max);
+        const boxLeft = cx - boxW / 2;
+        const boxRight = cx + boxW / 2;
+
+        return (
+          <g key={k}>
+            <line x1={cx} x2={cx} y1={maxy} y2={q3y} stroke={lineColor} strokeWidth={1.5} />
+            <line x1={cx} x2={cx} y1={q1y} y2={miny} stroke={lineColor} strokeWidth={1.5} />
+            <line x1={boxLeft} x2={boxRight} y1={maxy} y2={maxy} stroke={lineColor} strokeWidth={1.5} />
+            <line x1={boxLeft} x2={boxRight} y1={miny} y2={miny} stroke={lineColor} strokeWidth={1.5} />
+            <rect
+              x={boxLeft}
+              y={q3y}
+              width={boxW}
+              height={Math.max(2, q1y - q3y)}
+              fill={boxColor}
+              opacity="0.4" // 半透明，讓顏色柔和如圖
+              stroke={lineColor}
+              rx="2"
+            />
+            <line x1={boxLeft} x2={boxRight} y1={medy} y2={medy} stroke={lineColor} strokeWidth={3} />
+            <text x={cx} y={height - 10} textAnchor="middle" fontSize="12" fill="#ddd">
+              {k}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
   );
-};
+}
 
-/* BoxPlotChart（優化 Day of Year & Hour） */
-const BoxPlotChart = ({ groupedData, title }) => {
-  const isHour = title.includes("Hour");
+// 相關性熱圖 SVG（美化版）
+function CorrelationHeatmapSVG({ variables = [], matrix = [], width = 900, height = 960 }) {
+  if (!variables.length || !matrix.length) {
+    return <div className="text-white/40 text-lg">無相關性資料</div>;
+  }
 
-  let processedData = groupedData || {};
-  if (isHour) {
-    processedData = {};
-    for (let h = 0; h < 24; h++) {
-      const key = String(h);
-      processedData[key] = groupedData[key] || { values: [] };
+  const cellSize = (width - 120) / variables.length;
+  const colorScale = (val) => {
+    const abs = Math.abs(val);
+    if (val >= 0) {
+      const intensity = Math.min(abs, 1);
+      return `rgb(${Math.floor(100 + 155 * intensity)}, ${Math.floor(150 + 105 * intensity)}, 255)`;
+    } else {
+      const intensity = Math.min(abs, 1);
+      return `rgb(255, ${Math.floor(150 + 105 * (1 - intensity))}, ${Math.floor(150 + 105 * (1 - intensity))})`;
     }
-  }
-
-  const entries = Object.entries(processedData).sort(([a], [b]) => Number(a) - Number(b));
-
-  if (entries.length === 0) return <div className="text-xs text-white/40 text-center pt-8">無資料</div>;
-
-  const labels = entries.map(([k]) => {
-    if (title.includes("Month")) return `月份 ${k}`;
-    if (title.includes("Day")) return `第 ${k} 天`;
-    if (title.includes("Hour")) return `${k.padStart(2, "0")}:00`;
-    return k;
-  });
-
-  const data = entries.map(([_, v]) => v.values || []);
-  const totalPoints = data.reduce((sum, arr) => sum + arr.length, 0);
-
-  const isDayOfYear = title.includes("Day of Year");
+  };
 
   return (
-    <div className="relative h-full">
-      <Chart
-        type="boxplot"
-        data={{
-          labels,
-          datasets: [
-            {
-              label: "EAC",
-              data,
-              backgroundColor: "rgba(96, 165, 250, 0.4)",
-              borderColor: "#60a5fa",
-              outlierBackgroundColor: "#ef4444",
-              outlierBorderColor: "#dc2626",
-              outlierRadius: 4,
-              padding: isHour ? 20 : 10,
-              itemRadius: 0,
-              boxWidth: isHour ? 0.9 : (isDayOfYear ? 0.6 : 0.7),
-              whiskerWidth: isHour ? 0.8 : 0.5,
-            },
-          ],
-        }}
-        options={{
-          maintainAspectRatio: false,
-          responsive: true,
-          animation: false,
-          plugins: {
-            legend: { display: false },
-            tooltip: {
-              callbacks: {
-                label: (ctx) => {
-                  const values = ctx.raw || [];
-                  if (values.length === 0) return "無資料";
-                  return [`筆數: ${values.length}`];
-                },
-              },
-            },
-          },
-          scales: {
-            x: {
-              ticks: {
-                color: "#ccc",
-                maxRotation: isDayOfYear ? 90 : 0,
-                minRotation: isDayOfYear ? 90 : 0,
-                autoSkip: isDayOfYear,
-                maxTicksLimit: isDayOfYear ? 20 : undefined,
-              },
-            },
-            y: { ticks: { color: "#ccc" }, title: { display: true, text: "EAC", color: "#ccc" }, beginAtZero: true },
-          },
-        }}
-      />
-      <div className="absolute top-2 right-2 text-[10px] text-white/40">
-        {entries.length} 群組 / {totalPoints} 筆
+    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet">
+      <rect x="0" y="0" width={width} height={height} fill="#1e1e1e" />
+
+      {variables.map((rowVar, i) =>
+        variables.map((colVar, j) => {
+          const val = matrix[i][j];
+          const x = 80 + j * cellSize;
+          const y = 60 + i * cellSize;
+          return (
+            <g key={`${i}-${j}`}>
+              <rect
+                x={x}
+                y={y}
+                width={cellSize - 2}
+                height={cellSize - 2}
+                fill={colorScale(val)}
+                stroke="#333"
+                strokeWidth="1"
+                rx="4"
+              />
+              <text
+                x={x + cellSize / 2}
+                y={y + cellSize / 2 + 4}
+                textAnchor="middle"
+                fontSize="11"
+                fill="#000"  // 或 "black"
+              >
+                {val.toFixed(3)}
+              </text>
+            </g>
+          );
+        })
+      )}
+
+      {/* Y 軸標籤 */}
+      {variables.map((varName, i) => (
+        <text
+          key={`row-${i}`}
+          x={70}
+          y={60 + i * cellSize + cellSize / 2 + 4}
+          textAnchor="end"
+          fontSize="12"
+          fill="#ddd"
+        >
+          {varName}
+        </text>
+      ))}
+
+      {/* X 軸標籤 */}
+      {variables.map((varName, j) => (
+        <text
+          key={`col-${j}`}
+          x={80 + j * cellSize + cellSize / 2}
+          y={40}
+          textAnchor="middle"
+          fontSize="12"
+          fill="#ddd"
+          transform={`rotate(-45 ${80 + j * cellSize + cellSize / 2} 40)`}
+        >
+          {varName}
+        </text>
+      ))}
+
+      <text x={width / 2} y={20} textAnchor="middle" fontSize="16" fill="#fff">
+        各特徵相關性熱圖 (Pearson Correlation)
+      </text>
+    </svg>
+  );
+}
+
+// 散點圖（使用 Chart.js）
+function RenderPairScatter({ rowVar, colVar, plots }) {
+  const pairKey = `${colVar}__${rowVar}`;
+  const pairData = plots?.pairs?.[pairKey];
+
+  if (!pairData || !pairData.x || !pairData.y) {
+    return <div className="text-white/40 text-xs">無資料</div>;
+  }
+
+  const points = pairData.x.map((x, idx) => ({
+    x,
+    y: pairData.y[idx],
+    is_outlier: pairData.is_outlier ? pairData.is_outlier[idx] : false
+  }));
+
+  const hasOutliers = points.some(p => p.is_outlier);
+
+  const chartData = {
+    datasets: [
+      {
+        label: "正常值",
+        data: points.filter(p => !p.is_outlier).map(p => ({ x: p.x, y: p.y })),
+        backgroundColor: "rgba(96, 165, 250, 0.7)",   // 藍色
+        pointRadius: 3,
+      },
+      ...(hasOutliers ? [{
+        label: "離群值",
+        data: points.filter(p => p.is_outlier).map(p => ({ x: p.x, y: p.y })),
+        backgroundColor: "rgba(239, 68, 68, 0.9)",    // 紅色
+        pointRadius: 5,
+        pointStyle: "triangle", // 可選：用不同形狀更明顯
+      }] : []),
+    ],
+  };
+
+  const options = {
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        display: hasOutliers,  // 只在有離群值時顯示圖例
+        position: "top",
+        labels: { color: "#ddd" }
+      },
+      tooltip: {
+        callbacks: {
+          label: (context) => {
+            const point = context.raw;
+            const isOutlier = points.find(p => p.x === point.x && p.y === point.y)?.is_outlier;
+            return `${context.dataset.label}: (${point.x.toFixed(2)}, ${point.y.toFixed(2)})${isOutlier ? " ← 離群值" : ""}`;
+          }
+        }
+      }
+    },
+    scales: {
+      x: { title: { display: true, text: colVar, color: "#ddd" }, ticks: { color: "#aaa" } },
+      y: { title: { display: true, text: rowVar, color: "#ddd" }, ticks: { color: "#aaa" } },
+    },
+  };
+
+  return (
+    <div className="relative h-64">
+      <Scatter data={chartData} options={options} />
+      <div className="absolute bottom-2 right-2 text-xs text-white/60">
+        共 {points.length} 點{hasOutliers ? "，紅色三角形為離群值" : ""}
       </div>
     </div>
   );
-};
+}
 
-/* 主頁 */
-export default function DataCleaning({ onBack, onNext, ...props }) {
-  const [vizData, setVizData] = useState(null);
-  const [removeOutliers, setRemoveOutliers] = useState(false);
-  const [outlierMethod, setOutlierMethod] = useState("iqr");
+export default function DataCleaning({
+  fileName: propFileName,
+  onBack,
+  onNext,
+  onNavigateToPredict,
+  onNavigateToSites,
+  onLogout,
+}) {
+  const [outlierMethod, setOutlierMethod] = useState("none");
   const [iqrFactor, setIqrFactor] = useState(1.5);
-  const [zscoreThreshold, setZscoreThreshold] = useState(3.0);
-  const [enlargedCard, setEnlargedCard] = useState(null);
+  const [zThreshold, setZThreshold] = useState(3.0);
+  const [isolationContamination, setIsolationContamination] = useState(0.1);
 
+  const [fileName, setFileName] = useState(propFileName || localStorage.getItem("lastUploadedFile") || "");
+  const [plots, setPlots] = useState(null);
+  const [columns, setColumns] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [removeOutliers, setRemoveOutliers] = useState(false); // 修改預設為 false，先展示未刪除
+
+  const [selectedTab, setSelectedTab] = useState("scatter");
+  const [selectedBoxplot, setSelectedBoxplot] = useState("month");
+
+  // 載入視覺化資料
   useEffect(() => {
-    const id = localStorage.getItem("lastDataId");
-    if (!id) return;
+    if (!fileName) return;
 
-    const method = removeOutliers ? outlierMethod : "iqr";
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({
+          file_name: fileName,
+          outlier_method: removeOutliers ? outlierMethod : "none",
+          iqr_factor: iqrFactor.toString(),
+          z_threshold: zThreshold.toString(),
+          isolation_contamination: isolationContamination.toString(),
+        });
 
-    let url = `http://127.0.0.1:8000/visualize/site-data?data_id=${id}&remove_outliers=${removeOutliers}&outlier_method=${method}`;
-    if (method === "iqr") url += `&iqr_factor=${iqrFactor}`;
-    if (method === "zscore") url += `&zscore_threshold=${zscoreThreshold}`;
+        const res = await fetch(`http://127.0.0.1:8000/visualize-data/?${params.toString()}`);
+        if (!res.ok) throw new Error("載入視覺化資料失敗");
+        const data = await res.json();
+        setPlots(data.plots);
+        setColumns(data.columns);
+      } catch (err) {
+        console.error(err);
+        alert("載入資料失敗，請確認檔案是否存在");
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    fetch(url)
-      .then((r) => r.json())
-      .then(setVizData)
-      .catch(console.error);
-  }, [removeOutliers, outlierMethod, iqrFactor, zscoreThreshold]);
+    fetchData();
+  }, [fileName, removeOutliers, outlierMethod, iqrFactor, zThreshold, isolationContamination]);
 
-  if (!vizData) return <div className="text-white p-10">載入中...</div>;
+  // 儲存清理後資料
+  const handleSaveCleaned = async () => {
+    setSaving(true);
+    try {
+      const body = {
+        file_name: fileName,
+        outlier_method: removeOutliers ? outlierMethod : "none",
+        iqr_factor: parseFloat(iqrFactor),
+        z_threshold: parseFloat(zThreshold),
+        isolation_contamination: parseFloat(isolationContamination),
+      };
 
-  const pairs = vizData.scatter_matrix?.pairs || {};
-  const outlierMask = vizData.outlier_mask || [];
+      const res = await fetch("http://127.0.0.1:8000/save-cleaned-data/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
 
-  const handleCardClick = (title) => setEnlargedCard(enlargedCard === title ? null : title);
+      if (!res.ok) throw new Error("儲存失敗");
+      const result = await res.json();
+      alert(`清理完成！新檔案：${result.new_file_name}\n行數：${result.rows_after_cleaning}`);
+      onNext(); // 進入下一步
+    } catch (err) {
+      alert("儲存失敗，請稍後再試");
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
+  };
 
-  const renderChartCard = (title, children) => (
-    <ChartCard title={title} onClick={() => handleCardClick(title)}>
-      {children}
-    </ChartCard>
-  );
+  const tabs = [
+    { key: "scatter", label: "散佈矩陣" },
+    { key: "boxplot", label: "箱型圖" },
+    { key: "correlation", label: "相關性熱圖" },
+  ];
+
+  const boxplotSubTabs = [
+    { key: "month", label: "Month" },
+    { key: "day", label: "Day" },
+    { key: "hour", label: "Hour" },
+    { key: "batch", label: "批次" }, // 新增
+  ];
+
+  const renderContent = () => {
+    if (loading) return <div className="text-center py-20 text-white/60">資料載入中...</div>;
+    if (!plots) return <div className="text-center py-20 text-white/60">無資料可顯示</div>;
+
+    switch (selectedTab) {
+      case "scatter":
+        return plots.scatter_matrix ? (
+          <div className="grid grid-cols-3 gap-6">
+            {plots.scatter_matrix.variables.map((v1) =>
+              plots.scatter_matrix.variables.map((v2) => {
+                if (v1 === v2) {
+                  const hist = plots.scatter_matrix.hist?.[v1] || { bins: [], counts: [] };
+                  return (
+                    <div key={`${v1}_${v2}`} className="bg-black/20 p-4 rounded-xl">
+                      <div className="text-sm text-white/80 mb-3 text-center">{v1}</div>
+                      <HistogramSVG bins={hist.bins} counts={hist.counts} height={160} />
+                    </div>
+                  );
+                } else {
+                  return (
+                    <div key={`${v1}_${v2}`} className="bg-black/20 p-4 rounded-xl">
+                      <div className="text-xs text-white/70 mb-3 text-center">{v1} vs {v2}</div>
+                      <div className="h-64">
+                        <RenderPairScatter rowVar={v1} colVar={v2} plots={plots.scatter_matrix} />
+                      </div>
+                    </div>
+                  );
+                }
+              })
+            )}
+          </div>
+        ) : (
+          <div className="text-white/40">無散佈矩陣資料</div>
+        );
+
+      case "boxplot":
+        return (
+          <div>
+            <div className="flex gap-4 justify-center mb-8">
+              {boxplotSubTabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setSelectedBoxplot(tab.key)}
+                  className={`px-8 py-3 rounded-lg font-medium transition-all ${
+                    selectedBoxplot === tab.key
+                      ? "bg-blue-600 text-white shadow-lg"
+                      : "bg-gray-800 text-white/70 hover:bg-gray-700"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex justify-center">
+              {selectedBoxplot === "batch" && plots.boxplot_by_batch && (
+                <BoxplotSVG groups={plots.boxplot_by_batch} />
+              )}
+              {selectedBoxplot === "month" && plots.boxplot_by_month && (
+                <BoxplotSVG groups={plots.boxplot_by_month} />
+              )}
+              {selectedBoxplot === "day" && plots.boxplot_by_day && (
+                <BoxplotSVG groups={plots.boxplot_by_day} />
+              )}
+              {selectedBoxplot === "hour" && plots.boxplot_by_hour && (
+                <BoxplotSVG groups={plots.boxplot_by_hour} />
+              )}
+              {!plots[`boxplot_by_${selectedBoxplot}`] && (
+                <div className="text-white/40 text-lg">此分組無資料</div>
+              )}
+            </div>
+          </div>
+        );
+
+      case "correlation":
+        return plots.correlation_heatmap ? (
+          <div className="flex justify-center">
+            <CorrelationHeatmapSVG
+              variables={plots.correlation_heatmap.variables}
+              matrix={plots.correlation_heatmap.matrix}
+            />
+          </div>
+        ) : (
+          <div className="text-white/40">無相關性熱圖資料</div>
+        );
+
+      default:
+        return null;
+    }
+  };
 
   return (
-    <div className="min-h-screen w-full bg-background-dark text-white flex flex-col">
-      <Navbar activePage="predict" {...props} />
+    <div className="min-h-screen bg-background-dark text-white">
+      <Navbar /* props */ />
 
-      <div className="w-full border-b border-white/10 bg-white/[.02] px-6 py-3 sticky top-[64px] sm:top-[65px] z-40 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between">
-          <button onClick={onBack} className="flex items-center gap-1 text-sm text-white/50 hover:text-white transition-colors">
-            <span className="material-symbols-outlined !text-lg">arrow_back</span>
-            返回上一步
-          </button>
+      <main className="container mx-auto px-6 py-8 max-w-7xl">
+        <h1 className="text-3xl font-bold mb-8 text-center">資料清理與視覺化</h1>
 
-          <div className="text-sm font-medium">
-            <span className="text-white/40">1. 上傳資料</span>
-            <span className="mx-2 text-white/30">/</span>
-            <span className="text-primary font-bold">2. 清理資料</span>
-            <span className="mx-2 text-white/30">/</span>
-            <span className="text-white/40">3. 調整單位</span>
-            <span className="mx-2 text-white/30">/</span>
-            <span className="text-white/40">4. 選擇模型</span>
-            <span className="mx-2 text-white/30">/</span>
-            <span className="text-white/40">5. 輸出結果</span>
+        {/* Tab 與 離群值開關 */}
+        <div className="flex justify-between items-center mb-8">
+          <div className="flex gap-8 border-b border-white/10 pb-4">
+            {tabs.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setSelectedTab(tab.key)}
+                className={`text-lg font-semibold px-6 py-3 rounded-t-lg transition-all ${
+                  selectedTab === tab.key
+                    ? "bg-[#1E1E1E] text-blue-400 border-b-4 border-blue-400"
+                    : "text-white/50 hover:text-white/80"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* 離群值檢測設定區 */}
+          <div className="flex items-center gap-6">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={removeOutliers}
+                onChange={(e) => setRemoveOutliers(e.target.checked)}
+                className="w-5 h-5 text-blue-600 rounded bg-gray-800 border-gray-700"
+              />
+              <span className="text-sm font-medium">移除離群值並預覽</span> {/* 修改文字，讓更清楚 */}
+            </label>
+
+            {removeOutliers && (
+              <>
+                <select
+                  value={outlierMethod}
+                  onChange={(e) => setOutlierMethod(e.target.value)}
+                  className="px-4 py-2 rounded-lg bg-gray-800 text-white border border-gray-700 text-sm"
+                >
+                  <option value="iqr_comprehensive">綜合 IQR（EAC+GI+TM）</option>
+                  <option value="iqr_single">單一 IQR（僅 EAC）</option>
+                  <option value="zscore">Z-Score</option>
+                  <option value="isolation_forest">Isolation Forest</option>
+                </select>
+
+                {/* IQR 係數輸入 */}
+                {(outlierMethod === "iqr_comprehensive" || outlierMethod === "iqr_single") && (
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-white/70">IQR 係數：</span>
+                    <input
+                      type="number"
+                      min="0.5"
+                      max="5.0"
+                      step="0.1"
+                      value={iqrFactor}
+                      onChange={(e) => setIqrFactor(parseFloat(e.target.value) || 1.5)}
+                      className="w-24 px-3 py-2 text-sm bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="text-xs text-gray-400">(建議 1.0~3.0)</span>
+                  </div>
+                )}
+
+                {/* Z-Score 閾值輸入 */}
+                {outlierMethod === "zscore" && (
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-white/70">Z 分數閾值：</span>
+                    <input
+                      type="number"
+                      min="1.0"
+                      max="6.0"
+                      step="0.5"
+                      value={zThreshold}
+                      onChange={(e) => setZThreshold(parseFloat(e.target.value) || 3.0)}
+                      className="w-24 px-3 py-2 text-sm bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="text-sm font-medium">σ</span>
+                  </div>
+                )}
+
+                {/* Isolation Forest 離群比例輸入 */}
+                {outlierMethod === "isolation_forest" && (
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-white/70">預期離群比例：</span>
+                    <input
+                      type="number"
+                      min="0.01"
+                      max="0.5"
+                      step="0.01"
+                      value={isolationContamination}
+                      onChange={(e) => setIsolationContamination(parseFloat(e.target.value) || 0.1)}
+                      className="w-28 px-3 py-2 text-sm bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="text-sm font-medium">
+                      ({(isolationContamination * 100).toFixed(1)}%)
+                    </span>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
-      </div>
 
-      <main className="max-w-7xl mx-auto p-6">
-        <h1 className="text-3xl font-bold mb-6">數據驗證與離群值處理</h1>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {renderChartCard("EAC 分佈", <Histogram values={pairs.GI__EAC?.y || []} />)}
-          {renderChartCard("GI vs EAC", <ScatterChart title="GI vs EAC" x={pairs.GI__EAC?.x || []} y={pairs.GI__EAC?.y || []} xLabel="GI" yLabel="EAC" outlierMask={outlierMask} />)}
-          {renderChartCard("TM vs EAC", <ScatterChart title="TM vs EAC" x={pairs.TM__EAC?.x || []} y={pairs.TM__EAC?.y || []} xLabel="TM" yLabel="EAC" outlierMask={outlierMask} />)}
-          {renderChartCard("EAC vs GI", <ScatterChart title="EAC vs GI" x={pairs.GI__EAC?.y || []} y={pairs.GI__EAC?.x || []} xLabel="EAC" yLabel="GI" outlierMask={outlierMask} />)}
-          {renderChartCard("GI 分佈", <Histogram values={pairs.GI__EAC?.x || []} />)}
-          {renderChartCard("TM vs GI", <ScatterChart title="TM vs GI" x={pairs.GI__TM?.y || []} y={pairs.GI__TM?.x || []} xLabel="TM" yLabel="GI" outlierMask={outlierMask} />)}
-          {renderChartCard("EAC vs TM", <ScatterChart title="EAC vs TM" x={pairs.TM__EAC?.y || []} y={pairs.TM__EAC?.x || []} xLabel="EAC" yLabel="TM" outlierMask={outlierMask} />)}
-          {renderChartCard("GI vs TM", <ScatterChart title="GI vs TM" x={pairs.GI__TM?.x || []} y={pairs.GI__TM?.y || []} xLabel="GI" yLabel="TM" outlierMask={outlierMask} />)}
-          {renderChartCard("TM 分佈", <Histogram values={pairs.TM__EAC?.x || []} />)}
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-10">
-          {renderChartCard("EAC by Month", <BoxPlotChart groupedData={vizData.boxplot_by_month || {}} title="EAC by Month" />)}
-          {renderChartCard("EAC by Day of Year", <BoxPlotChart groupedData={vizData.boxplot_by_day || {}} title="EAC by Day of Year" />)}
-          {renderChartCard("EAC by Hour", <BoxPlotChart groupedData={vizData.boxplot_by_hour || {}} title="EAC by Hour" />)}
+        {/* 內容區 */}
+        <div className="bg-[#1E1E1E]/80 backdrop-blur rounded-2xl p-8 shadow-2xl">
+          {renderContent()}
         </div>
       </main>
 
-      {/* ================= 底部控制列 ================= */}
-      <div className="sticky bottom-0 z-40 w-full border-t border-white/10 bg-background-dark/90 backdrop-blur-lg px-6 py-4 shadow-2xl">
+      {/* 底部按鈕 */}
+      <div className="sticky bottom-0 w-full border-t border-white/10 bg-background-dark/90 backdrop-blur-lg p-4 px-6 z-40">
         <div className="mx-auto flex max-w-6xl items-center justify-between">
-
-          {/* 左側：離群值資訊 */}
-          <div className="flex items-center gap-6">
-            <div className="flex flex-col">
-              <span className="text-sm font-bold text-white">
-                離群值處理選項
-              </span>
-              <span className="text-xs text-white/60">
-                偵測到{" "}
-                <span className="font-bold text-white">
-                  {outlierMask.filter(Boolean).length}
-                </span>{" "}
-                個離群點，建議移除。
-              </span>
-            </div>
-
-            {/* 偵測方法 */}
-            <select
-              value={outlierMethod}
-              onChange={(e) => setOutlierMethod(e.target.value)}
-              className="rounded border border-white/40 bg-black/40 px-2.5 py-1 text-xs text-white focus:outline-none focus:border-primary"
-            >
-              <option value="none">無</option>
-              <option value="iqr">IQR</option>
-              <option value="zscore">Z-Score</option>
-              <option value="isolation_forest">Isolation Forest</option>
-              <option value="custom">自訂</option>
-            </select>
-
-            {/* IQR factor */}
-            {outlierMethod === "iqr" && (
-              <div className="flex items-center gap-2">
-                <span className="text-white/60">Factor</span>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0.5"
-                  value={iqrFactor}
-                  onChange={(e) => setIqrFactor(parseFloat(e.target.value) || 1.5)}
-                  className="w-16 rounded border border-white/40 bg-black/40 px-2 py-1 text-xs text-white"
-                />
-              </div>
-            )}
-
-            {/* Z-score threshold */}
-            {outlierMethod === "zscore" && (
-              <div className="flex items-center gap-2">
-                <span className="text-white/60">Thresh</span>
-                <input
-                  type="number"
-                  step="0.5"
-                  min="1"
-                  value={zscoreThreshold}
-                  onChange={(e) => setZscoreThreshold(parseFloat(e.target.value) || 3)}
-                  className="w-16 rounded border border-white/40 bg-black/40 px-2 py-1 text-xs text-white"
-                />
-              </div>
-            )}
-
-            {/* 移除離群值 toggle */}
-            <button
-              onClick={() => setRemoveOutliers(!removeOutliers)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                removeOutliers ? "bg-primary" : "bg-white/20"
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
-                  removeOutliers ? "translate-x-6" : "translate-x-1"
-                }`}
-              />
-            </button>
-          </div>
-
-          {/* 右側：流程按鈕 */}
+          <div className="text-sm text-white/60">已根據檔案 {fileName} 產生視覺化 {removeOutliers ? `(刪除離群值後)` : `(標記離群值，未刪除)`}</div>
           <div className="flex items-center gap-4">
             <button
               onClick={onBack}
-              className="rounded-lg border border-white/30 px-6 py-2 text-sm font-bold text-white hover:bg-white/10 transition"
+              className="rounded-lg border border-white/10 px-6 py-2 text-sm font-bold text-white hover:bg-white/10"
             >
-              返回上一步
+              返回
             </button>
 
+            {/* 🔹 新增：直接下一步 */}
             <button
               onClick={onNext}
-              className="rounded-lg bg-primary px-8 py-2 text-sm font-bold text-background-dark hover:scale-105 transition-transform"
+              className="rounded-lg border border-blue-400 px-6 py-2 text-sm font-bold text-blue-400 hover:bg-blue-400/10"
             >
-              下一步
+              跳過清理 → 單位調整
+            </button>
+
+            {/* 🔹 原本的儲存 */}
+            <button
+              onClick={handleSaveCleaned}
+              disabled={loading || saving || !plots}
+              className="rounded-lg bg-primary px-8 py-2 text-sm font-bold text-background-dark disabled:opacity-50"
+            >
+              確認清理並繼續 → 單位調整
             </button>
           </div>
         </div>
       </div>
-
-      {/* 放大 Modal */}
-      {enlargedCard && (
-        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-8" onClick={() => setEnlargedCard(null)}>
-          <div className="bg-background-dark/95 rounded-2xl p-10 max-w-6xl w-full max-h-full overflow-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-8">
-              <h2 className="text-4xl font-bold text-white">{enlargedCard}</h2>
-              <button onClick={() => setEnlargedCard(null)} className="text-white/70 hover:text-white text-5xl">×</button>
-            </div>
-            <div className="h-[80vh]">
-              {enlargedCard === "EAC 分佈" && <Histogram values={pairs.GI__EAC?.y || []} />}
-              {enlargedCard === "GI vs EAC" && <ScatterChart title={enlargedCard} x={pairs.GI__EAC?.x || []} y={pairs.GI__EAC?.y || []} xLabel="GI" yLabel="EAC" outlierMask={outlierMask} />}
-              {enlargedCard === "TM vs EAC" && <ScatterChart title={enlargedCard} x={pairs.TM__EAC?.x || []} y={pairs.TM__EAC?.y || []} xLabel="TM" yLabel="EAC" outlierMask={outlierMask} />}
-              {enlargedCard === "EAC vs GI" && <ScatterChart title={enlargedCard} x={pairs.GI__EAC?.y || []} y={pairs.GI__EAC?.x || []} xLabel="EAC" yLabel="GI" outlierMask={outlierMask} />}
-              {enlargedCard === "GI 分佈" && <Histogram values={pairs.GI__EAC?.x || []} />}
-              {enlargedCard === "TM vs GI" && <ScatterChart title={enlargedCard} x={pairs.GI__TM?.y || []} y={pairs.GI__TM?.x || []} xLabel="TM" yLabel="GI" outlierMask={outlierMask} />}
-              {enlargedCard === "EAC vs TM" && <ScatterChart title={enlargedCard} x={pairs.TM__EAC?.y || []} y={pairs.TM__EAC?.x || []} xLabel="EAC" yLabel="TM" outlierMask={outlierMask} />}
-              {enlargedCard === "GI vs TM" && <ScatterChart title={enlargedCard} x={pairs.GI__TM?.x || []} y={pairs.GI__TM?.y || []} xLabel="GI" yLabel="TM" outlierMask={outlierMask} />}
-              {enlargedCard === "TM 分佈" && <Histogram values={pairs.TM__EAC?.x || []} />}
-              {enlargedCard === "EAC by Month" && <BoxPlotChart groupedData={vizData.boxplot_by_month || {}} title="EAC by Month" />}
-              {enlargedCard === "EAC by Day of Year" && <BoxPlotChart groupedData={vizData.boxplot_by_day || {}} title="EAC by Day of Year" />}
-              {enlargedCard === "EAC by Hour" && <BoxPlotChart groupedData={vizData.boxplot_by_hour || {}} title="EAC by Hour" />}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

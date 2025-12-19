@@ -126,52 +126,69 @@ export default function StartPredict({
 
   /* ==================== 上傳檔案 ==================== */
   const handleFileSelect = async (event) => {
-    const uploadedFile = event.target.files[0];
-    if (!uploadedFile) return;
+  const uploadedFile = event.target.files[0];
+  if (!uploadedFile) return;
 
-    if (!selectedSite) {
-      alert("請先選擇案場！");
+  if (!selectedSite) {
+    alert("請先選擇案場！");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("file", uploadedFile);
+
+  try {
+    setProcessing(true);
+
+    const res = await fetch(
+      `http://127.0.0.1:8000/site/upload-data?site_id=${selectedSite}`,
+      { method: "POST", body: formData }
+    );
+
+    const json = await res.json();
+    console.log("upload response:", json); // 🔍 除錯用
+
+    // 🔥 關鍵 1：HTTP 層級錯誤（400 / 500）
+    if (!res.ok) {
+      alert(
+        json?.detail?.error ||
+        json?.detail ||
+        "上傳失敗（後端錯誤）"
+      );
       return;
     }
 
-    const uid = getUserId();
-    const formData = new FormData();
-    formData.append("file", uploadedFile);
-
-    try {
-      setProcessing(true);
-
-      const res = await fetch(
-        `http://127.0.0.1:8000/site/upload-data?site_id=${selectedSite}&user_id=${uid}`,
-        { method: "POST", body: formData }
-      );
-
-      const json = await res.json();
-      if (!json.data_id) {
-        alert("上傳失敗");
-        return;
-      }
-
-      setFile({
-        name: uploadedFile.name,
-        size: (uploadedFile.size / 1024 / 1024).toFixed(2) + " MB",
-        status: "上傳成功",
-      });
-
-      setFileName(json.file_name);
-      setFeatures(json.features || []);
-      setRows(json.rows || null);
-
-      // 🔥 只存，是否讀由「視覺化返回」決定
-      localStorage.setItem("lastUploadedFile", json.file_name);
-      localStorage.setItem("lastDataId", json.data_id);
-      localStorage.setItem("lastFeatures", JSON.stringify(json.features || []));
-      localStorage.setItem("lastRows", json.rows || "");
-      localStorage.setItem("lastSelectedSite", selectedSite);
-    } finally {
-      setProcessing(false);
+    // 🔥 關鍵 2：成功一定要有 data_id
+    if (!json.data_id) {
+      alert("上傳失敗（缺少 data_id）");
+      return;
     }
-  };
+
+    // ✅ 成功流程
+    setFile({
+      name: uploadedFile.name,
+      size: (uploadedFile.size / 1024 / 1024).toFixed(2) + " MB",
+      status: "上傳成功",
+    });
+
+    setFileName(json.file_name);
+    setFeatures(json.features || []);
+    setRows(json.rows || null);
+
+    // 🔥 只存預測流程資料
+    localStorage.setItem("lastUploadedFile", json.file_name);
+    localStorage.setItem("lastDataId", json.data_id);
+    localStorage.setItem("lastFeatures", JSON.stringify(json.features || []));
+    localStorage.setItem("lastRows", json.rows || "");
+    localStorage.setItem("lastSelectedSite", selectedSite);
+
+  } catch (err) {
+    console.error("upload error:", err);
+    alert("無法連線到後端，請確認伺服器是否啟動");
+  } finally {
+    setProcessing(false);
+  }
+};
 
   return (
     <div className="min-h-screen w-full bg-background-dark text-white flex flex-col">
