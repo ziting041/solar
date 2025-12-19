@@ -128,3 +128,21 @@ def update_site(
         "site_name": site.site_name,
         "location": site.location,
     }
+
+@router.delete("/{site_id}")
+def delete_site(site_id: int, db: Session = Depends(get_db)):
+    site = db.query(Site).filter(Site.site_id == site_id).first()
+
+    if not site:
+        raise HTTPException(status_code=404, detail="site not found")
+
+    # 👉 如果你有關聯資料（SiteData），先刪子表（保險）
+    db.query(SiteData).filter(SiteData.site_id == site_id).delete()
+
+    db.delete(site)
+    db.commit()
+
+    return {
+        "message": "site deleted",
+        "site_id": site_id
+    }
