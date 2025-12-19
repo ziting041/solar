@@ -8,8 +8,6 @@ export default function StartPredict({
   onNavigateToPredict,
   onNavigateToSites,
   onLogout,
-
-  // ✅ 只有「視覺化頁返回」時才會傳進來
   restoredFromVisualization = false,
 }) {
   const [activeTab, setActiveTab] = useState("existing");
@@ -22,53 +20,54 @@ export default function StartPredict({
 
   const [file, setFile] = useState(null);
   const [fileName, setFileName] = useState("");
+
+  // 🔥 原始欄位（顯示用）
+  const [originalFeatures, setOriginalFeatures] = useState([]);
+
+  // 系統實際使用欄位（流程用）
   const [features, setFeatures] = useState([]);
+
   const [rows, setRows] = useState(null);
   const [processing, setProcessing] = useState(false);
+  const [siteError, setSiteError] = useState("");
+  const [fileError, setFileError] = useState("");
 
   const getUserId = () => {
     const user = JSON.parse(localStorage.getItem("user") || "{}");
     return user.user_id || 0;
   };
 
-  // 🔥【補齊】只清「預測流程」相關資料（不要用 localStorage.clear）
   const clearPredictCache = () => {
     localStorage.removeItem("lastUploadedFile");
     localStorage.removeItem("lastDataId");
     localStorage.removeItem("lastFeatures");
+    localStorage.removeItem("lastOriginalFeatures"); // 🔥
     localStorage.removeItem("lastRows");
     localStorage.removeItem("lastSelectedSite");
   };
 
-  /* =================================================
-     🔥 關鍵：不是從「視覺化返回」→ 一律清空
-  ================================================= */
   useEffect(() => {
     if (!restoredFromVisualization) {
       clearPredictCache();
-
       setFile(null);
       setFileName("");
       setFeatures([]);
+      setOriginalFeatures([]); // 🔥
       setRows(null);
       setSelectedSite("");
     } else {
       const savedFileName = localStorage.getItem("lastUploadedFile");
       const savedFeatures = localStorage.getItem("lastFeatures");
+      const savedOriginal = localStorage.getItem("lastOriginalFeatures"); // 🔥
       const savedRows = localStorage.getItem("lastRows");
       const savedSite = localStorage.getItem("lastSelectedSite");
 
       if (savedFileName) {
         setFileName(savedFileName);
-
-        // 🔥 關鍵：補回 file，畫面才會顯示
-        setFile({
-          name: savedFileName,
-          size: "",
-          status: "上傳成功",
-        });
+        setFile({ name: savedFileName, status: "上傳成功" });
       }
       if (savedFeatures) setFeatures(JSON.parse(savedFeatures));
+      if (savedOriginal) setOriginalFeatures(JSON.parse(savedOriginal)); // 🔥
       if (savedRows) setRows(Number(savedRows));
       if (savedSite) setSelectedSite(savedSite);
     }
@@ -85,7 +84,7 @@ export default function StartPredict({
       .catch(() => setSites([]));
   }, []);
 
-  /* ==================== 建立新案場（不動） ==================== */
+  /* ==================== 建立新案場 ==================== */
   const createNewSite = async () => {
     const uid = getUserId();
     if (!newSiteName || !newSiteCode || !newLocation) {
@@ -126,69 +125,69 @@ export default function StartPredict({
 
   /* ==================== 上傳檔案 ==================== */
   const handleFileSelect = async (event) => {
-  const uploadedFile = event.target.files[0];
-  if (!uploadedFile) return;
+    const uploadedFile = event.target.files[0];
+    if (!uploadedFile) return;
 
-  if (!selectedSite) {
-    alert("請先選擇案場！");
-    return;
-  }
+    setFileError("");
+    setSiteError("");
 
-  const formData = new FormData();
-  formData.append("file", uploadedFile);
+    if (!selectedSite) {
+      setSiteError("請先選擇案場！");
+      return;
+    }
 
-  try {
-    setProcessing(true);
+    const formData = new FormData();
+    formData.append("file", uploadedFile);
 
-    const res = await fetch(
-      `http://127.0.0.1:8000/site/upload-data?site_id=${selectedSite}`,
-      { method: "POST", body: formData }
-    );
+    try {
+      setProcessing(true);
 
-    const json = await res.json();
-    console.log("upload response:", json); // 🔍 除錯用
-
-    // 🔥 關鍵 1：HTTP 層級錯誤（400 / 500）
-    if (!res.ok) {
-      alert(
-        json?.detail?.error ||
-        json?.detail ||
-        "上傳失敗（後端錯誤）"
+      const res = await fetch(
+        `http://127.0.0.1:8000/site/upload-data?site_id=${selectedSite}`,
+        { method: "POST", body: formData }
       );
-      return;
+
+      const json = await res.json();
+      console.log("upload response:", json);
+
+      if (!res.ok) {
+        setFileError(
+          json?.detail?.error ||
+          json?.detail ||
+          "檔案格式或欄位錯誤，請確認資料內容"
+        );
+        return;
+      }
+
+      if (!json.data_id) {
+        setFileError("上傳失敗，請確認檔案內容");
+        return;
+      }
+
+      // ✅ 成功
+      setFile({ name: uploadedFile.name, status: "上傳成功" });
+      setFileName(json.file_name);
+      setFeatures(json.features || []);
+      setOriginalFeatures(json.original_features || []); // 🔥
+      setRows(json.rows || null);
+
+      // 🔥 存 localStorage
+      localStorage.setItem("lastUploadedFile", json.file_name);
+      localStorage.setItem("lastDataId", json.data_id);
+      localStorage.setItem("lastFeatures", JSON.stringify(json.features || []));
+      localStorage.setItem(
+        "lastOriginalFeatures",
+        JSON.stringify(json.original_features || [])
+      );
+      localStorage.setItem("lastRows", json.rows || "");
+      localStorage.setItem("lastSelectedSite", selectedSite);
+    } catch (err) {
+      console.error(err);
+      setFileError("無法連線到伺服器");
+    } finally {
+      setProcessing(false);
     }
-
-    // 🔥 關鍵 2：成功一定要有 data_id
-    if (!json.data_id) {
-      alert("上傳失敗（缺少 data_id）");
-      return;
-    }
-
-    // ✅ 成功流程
-    setFile({
-      name: uploadedFile.name,
-      size: (uploadedFile.size / 1024 / 1024).toFixed(2) + " MB",
-      status: "上傳成功",
-    });
-
-    setFileName(json.file_name);
-    setFeatures(json.features || []);
-    setRows(json.rows || null);
-
-    // 🔥 只存預測流程資料
-    localStorage.setItem("lastUploadedFile", json.file_name);
-    localStorage.setItem("lastDataId", json.data_id);
-    localStorage.setItem("lastFeatures", JSON.stringify(json.features || []));
-    localStorage.setItem("lastRows", json.rows || "");
-    localStorage.setItem("lastSelectedSite", selectedSite);
-
-  } catch (err) {
-    console.error("upload error:", err);
-    alert("無法連線到後端，請確認伺服器是否啟動");
-  } finally {
-    setProcessing(false);
-  }
-};
+  };
 
   return (
     <div className="min-h-screen w-full bg-background-dark text-white flex flex-col">
@@ -267,7 +266,10 @@ export default function StartPredict({
               <select
                 className="w-full rounded-lg border border-white/10 bg-black/20 px-4 py-3 text-white"
                 value={selectedSite}
-                onChange={(e) => setSelectedSite(e.target.value)}
+                onChange={(e) => {
+                  setSelectedSite(e.target.value);
+                  setSiteError(""); // ✅ 一選好案場就清錯誤
+                }}
               >
                 <option value="">請選擇案場</option>
                 {sites.map((s) => (
@@ -276,6 +278,9 @@ export default function StartPredict({
                   </option>
                 ))}
               </select>
+              {siteError && (
+                <p className="mt-2 text-sm text-red-400">{siteError}</p>
+              )}
             </div>
           ) : (
             <div className="mt-4 flex flex-col gap-3">
@@ -315,7 +320,7 @@ export default function StartPredict({
 
         {/* Step 2 */}
         <div className="rounded-xl border border-white/10 bg-white/[.02] p-6 sm:p-8">
-          <h2 className="text-xl font-bold mb-6">步驟二：上傳數據檔案</h2>
+          <h2 className="text-xl font-bold mb-6">步驟二：上傳數據檔案 (請確認檔案含有date、hour、GI、TM、EAC必要特徵)</h2>
 
           <div className="relative mb-4 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-white/20 py-12 bg-white/[.01] text-center">
             <input
@@ -326,19 +331,35 @@ export default function StartPredict({
             />
 
             <label
+              onClick={(e) => {
+                if (!selectedSite) {
+                  e.preventDefault();
+                  setSiteError("請先選擇案場！");
+                  return;
+                }
+                setFileError("");
+              }}
               htmlFor="fileInput"
               className="rounded-lg border border-primary text-primary px-6 py-2 cursor-pointer"
             >
               選擇檔案
             </label>
+            {fileError && (
+              <p className="mt-2 text-sm text-red-400">{fileError}</p>
+            )}
           </div>
 
           {fileName && (
             <div className="mt-4 rounded-lg border border-white/10 bg-black/20 p-4">
               <h3 className="text-lg font-bold mb-2">📄 檔案資訊</h3>
 
+              {/* ✅ 新增這一行 */}
+              <p className="text-green-400 font-medium mb-2">
+                ✅ 上傳成功：{fileName}
+              </p>
+
               <p className="text-white/80 mb-2">
-                <strong>欄位數量：</strong> {features.length} 個
+                <strong>欄位數量：</strong> {originalFeatures.length} 個
               </p>
 
               <p className="text-white/80 mb-4">
@@ -347,7 +368,7 @@ export default function StartPredict({
 
               <strong className="text-white/90">欄位列表：</strong>
               <ul className="list-disc list-inside mt-2 text-white/70">
-                {features.map((f, idx) => (
+                {originalFeatures.map((f, idx) => (
                   <li key={idx}>{f}</li>
                 ))}
               </ul>
@@ -365,13 +386,16 @@ export default function StartPredict({
                 fileName || localStorage.getItem("lastUploadedFile");
               const dataId = localStorage.getItem("lastDataId");
 
+              setSiteError("");
+              setFileError("");
+
               if (!selectedSite) {
-                alert("請選擇案場！");
+                setSiteError("請先選擇案場！");
                 return;
               }
 
               if (!finalFileName || !dataId) {
-                alert("請先上傳檔案！");
+                setFileError("請先上傳檔案！");
                 return;
               }
 

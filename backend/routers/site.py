@@ -3,7 +3,7 @@ from fastapi import APIRouter, UploadFile, File, Query, HTTPException, Depends
 from sqlalchemy.orm import Session
 from io import BytesIO
 import pandas as pd
-from datetime import datetime, date
+import re
 
 from database import get_db
 from models import Site, SiteData, User
@@ -78,50 +78,71 @@ async def upload_site_data(
     bio = BytesIO(content)
 
     try:
-        df = (
-            pd.read_csv(bio)
-            if file.filename.lower().endswith(".csv")
-            else pd.read_excel(bio)
-        )
+        if file.filename.lower().endswith(".csv"):
+            df = pd.read_csv(bio)
+        else:
+            df = pd.read_excel(bio)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"檔案解析失敗: {e}")
 
-    # 3️⃣ 欄位正規化（避免大小寫 / 空白）
-    df.columns = [c.strip().lower() for c in df.columns]
+    # =========================
+    # 3️⃣ 欄位辨識（保留原始欄位）
+    # =========================
+    original_columns = list(df.columns)  # ✅ 原始欄位（完全不動）
 
-    # 4️⃣ 欄位對應
-    column_map = {
-        # date
-        "date": "the_date",
-        "thedate": "the_date",
-        "the_date": "the_date",
+    def normalize(col: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", col.lower())
 
-        # hour
-        "hour": "the_hour",
-        "thehour": "the_hour",
-        "the_hour": "the_hour",
+    normalized_map = {normalize(c): c for c in df.columns}
 
-        # values
-        "gi": "gi",
-        "tm": "tm",
-        "eac": "eac",
-    }
+    def find_column(keyword: str):
+        for norm, original in normalized_map.items():
+            if keyword in norm:
+                return original
+        return None
 
-    df = df.rename(columns=column_map)
+    date_col = find_column("date")
+    hour_col = find_column("hour")
+    gi_col   = find_column("gi")
+    tm_col   = find_column("tm")
+    eac_col  = find_column("eac")
 
-    # 5️⃣ 必要欄位檢查
-    required = {"the_date", "the_hour", "gi", "tm", "eac"}
-    if not required.issubset(df.columns):
+    missing = []
+    if not date_col: missing.append("date")
+    if not hour_col: missing.append("hour")
+    if not gi_col:   missing.append("gi")
+    if not tm_col:   missing.append("tm")
+    if not eac_col:  missing.append("eac")
+
+    if missing:
         raise HTTPException(
             status_code=400,
             detail={
                 "error": "欄位錯誤",
-                "required": list(required),
-                "your_columns": list(df.columns),
-            }
+                "missing_required_fields": missing,
+                "your_columns": original_columns,
+                "example_format": [
+                    "date, hour, gi, tm, eac",
+                    "2024-01-01, 0, 0, 15.2, 0",
+                    "2024-01-01, 00:00, 0, 15.2, 0",
+                ],
+            },
         )
 
-    # 6️⃣ 🔥 日期型別一次處理（關鍵）
+    # =========================
+    # 4️⃣ rename 成系統內部欄位
+    # =========================
+    df = df.rename(
+        columns={
+            date_col: "the_date",
+            hour_col: "the_hour",
+            gi_col: "gi",
+            tm_col: "tm",
+            eac_col: "eac",
+        }
+    )
+
+    # 5️⃣ 日期轉換
     try:
         df["the_date"] = pd.to_datetime(df["the_date"], errors="raise").dt.date
     except Exception:
@@ -130,38 +151,69 @@ async def upload_site_data(
             detail="the_date 欄位無法轉換為日期格式 (YYYY-MM-DD)",
         )
 
-    # 7️⃣ 建立 ORM 物件（不要在這裡轉型 date）
+    # =========================
+    # 6️⃣ 建立 ORM 物件（hour 安全解析）
+    # =========================
     entries = []
 
-    for _, row in df.iterrows():
+    for idx, row in df.iterrows():
+        raw_hour = row["the_hour"]
+
+        if isinstance(raw_hour, (int, float)):
+            hour = int(raw_hour)
+        elif isinstance(raw_hour, str):
+            try:
+                hour = int(raw_hour.split(":")[0])
+            except Exception:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"第 {idx+1} 列 hour 格式錯誤，收到: {raw_hour}",
+                )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"第 {idx+1} 列 hour 型態錯誤，收到: {raw_hour}",
+            )
+
+        if not (0 <= hour <= 23):
+            raise HTTPException(
+                status_code=400,
+                detail=f"第 {idx+1} 列 hour 必須介於 0~23，收到: {hour}",
+            )
+
         entry = SiteData(
             site_id=site_id,
-            the_date=row["the_date"],              # datetime.date ✅
-            the_hour=int(row["the_hour"]),
+            the_date=row["the_date"],
+            the_hour=hour,
             gi=float(row["gi"]),
             tm=float(row["tm"]),
             eac=float(row["eac"]),
             data_name=file.filename,
-
-            # ✅ 關鍵：DB NOT NULL，一定要給
             outlier_method="raw",
             missing_method="raw",
-
             original_rows=len(df),
         )
-    entries.append(entry)
+        entries.append(entry)
 
-    # 8️⃣ 一次寫入（穩定、不會被降型）
+    # 7️⃣ 一次寫入
     db.add_all(entries)
     db.commit()
 
+    # =========================
+    # 8️⃣ 回傳（🔥 重點在這）
+    # =========================
     return {
         "message": "上傳成功",
-        "rows": len(df),
+        "rows": len(entries),
         "site_id": site_id,
-        "data_id": entries[0].data_id,   # 給前端用
+        "data_id": entries[0].data_id,
         "file_name": file.filename,
-        "features": list(df.columns),
+
+        # ✅ 原始欄位（你要顯示的）
+        "original_features": original_columns,
+
+        # ✅ 系統實際使用欄位
+        "features": ["the_date", "the_hour", "gi", "tm", "eac"],
     }
 
 
