@@ -2,7 +2,7 @@ import React, { useState } from "react";
 
 export default function RegisterModal({ onClose, onSwitchToLogin }) {
   const [name, setName] = useState("");
-  const [account, setAccount] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [msg, setMsg] = useState("");
 
@@ -12,7 +12,7 @@ export default function RegisterModal({ onClose, onSwitchToLogin }) {
 
     const payload = {
       user_name: name,
-      user_account: account,
+      user_email: email,   // 👈 改成 email
       user_pw: password,
     };
 
@@ -30,7 +30,7 @@ export default function RegisterModal({ onClose, onSwitchToLogin }) {
         return;
       }
 
-      // ✅ 註冊成功：直接切回登入 modal
+      // ✅ 註冊成功 → 回登入
       onSwitchToLogin();
 
     } catch {
@@ -65,14 +65,14 @@ export default function RegisterModal({ onClose, onSwitchToLogin }) {
           </div>
 
           <div>
-            <label className="text-white/80 text-sm">帳號</label>
+            <label className="text-white/80 text-sm">電子信箱</label>
             <input
               className="w-full bg-white/10 text-white px-3 py-2 rounded"
-              type="text"
+              type="email"          // 👈 email
               required
-              value={account}
-              onChange={(e) => setAccount(e.target.value)}
-              placeholder="輸入登入帳號"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="example@email.com"
             />
           </div>
 

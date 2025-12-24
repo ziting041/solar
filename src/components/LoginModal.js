@@ -5,7 +5,7 @@ export default function LoginModal({
   onSwitchToRegister,
   onLoginSuccess,
 }) {
-  const [account, setAccount] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [msg, setMsg] = useState("");
 
@@ -18,7 +18,7 @@ export default function LoginModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          user_account: account,
+          user_email: email,   // 👈 改成 email
           user_pw: password,
         }),
       });
@@ -30,14 +30,11 @@ export default function LoginModal({
         return;
       }
 
-      // ✅ 儲存登入資料
       localStorage.setItem("user", JSON.stringify(data));
       localStorage.setItem("user_id", data.user_id);
 
-      // ✅ 不顯示 alert，直接交給父層轉頁
       onLoginSuccess?.(data);
       onClose?.();
-
     } catch {
       setMsg("伺服器連線錯誤");
     }
@@ -68,14 +65,14 @@ export default function LoginModal({
 
         <form className="flex flex-col gap-4" onSubmit={login}>
           <div>
-            <label className="text-white/80 text-sm">帳號</label>
+            <label className="text-white/80 text-sm">電子信箱</label>
             <input
-              type="text"
+              type="email"
               className="w-full rounded-lg bg-white/10 px-4 py-3 text-white"
               required
-              value={account}
-              onChange={(e) => setAccount(e.target.value)}
-              placeholder="請輸入帳號"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="請輸入電子信箱"
             />
           </div>
 
@@ -101,10 +98,7 @@ export default function LoginModal({
 
         <p className="text-center text-sm text-white/60 mt-3">
           還沒有帳號？
-          <button
-            onClick={onSwitchToRegister}
-            className="text-primary ml-1"
-          >
+          <button onClick={onSwitchToRegister} className="text-primary ml-1">
             立即註冊
           </button>
         </p>
