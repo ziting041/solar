@@ -1,5 +1,5 @@
 // src/components/CreateSiteModal.js
-import React, { useState } from 'react';
+import React, { useState, useEffect } from "react";
 
 export default function CreateSiteModal({ onClose, onSubmit }) {
   // 防止點擊內部時關閉
@@ -7,96 +7,126 @@ export default function CreateSiteModal({ onClose, onSubmit }) {
     e.stopPropagation();
   };
 
-  // ➜ 正確的資料表欄位
+  // 表單資料
   const [formData, setFormData] = useState({
     site_code: "",
     site_name: "",
-    location: ""
+    location: "",
   });
 
+  // 錯誤訊息（⭐ 關鍵）
+  const [msg, setMsg] = useState("");
+
+  // Modal 打開時重置
+  useEffect(() => {
+    setFormData({
+      site_code: "",
+      site_name: "",
+      location: "",
+    });
+    setMsg("");
+  }, []);
+
   const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.id]: e.target.value });
+    setFormData({
+      ...formData,
+      [e.target.id]: e.target.value,
+    });
   };
 
-  const handleSubmit = () => {
-    // 基本驗證（避免空白）
+  const handleSubmit = async () => {
+    setMsg("");
+
+    // ✅ 前端基本驗證（體驗好）
     if (!formData.site_code || !formData.site_name || !formData.location) {
-      alert("請完整填寫案場代號、案場名稱與地點");
+      setMsg("請完整填寫案場代號、案場名稱與地點");
       return;
     }
 
-    onSubmit(formData);  // 將資料回傳給 App.js → 呼叫 API
+    try {
+      /**
+       * ⭐ onSubmit 必須回傳：
+       * - { success: true }
+       * - 或 { success: false, message: "錯誤訊息" }
+       */
+      const result = await onSubmit(formData);
+
+      if (!result?.success) {
+        setMsg(result?.message || "該案場已被建立");
+        return;
+      }
+
+      // ✅ 成功就關閉
+      onClose();
+    } catch {
+      setMsg("伺服器連線錯誤");
+    }
   };
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm transition-opacity"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-md transform rounded-xl border border-white/10 bg-[#1E1E1E] p-6 shadow-2xl transition-all"
+        className="relative w-full max-w-md rounded-xl border border-white/10 bg-[#1E1E1E] p-6 shadow-2xl"
         onClick={handleModalClick}
       >
-
         {/* 標題 */}
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-bold text-white">建立新的案場</h2>
           <button
             onClick={onClose}
             className="text-white/50 hover:text-white transition-colors"
           >
-            <span className="material-symbols-outlined">close</span>
+            ✕
           </button>
         </div>
 
-        {/* ------------------ 表單 ------------------ */}
-        <div className="flex flex-col gap-4">
+        {/* ❌ 錯誤訊息 */}
+        {msg && (
+          <p className="mb-4 text-sm text-red-400">
+            {msg}
+          </p>
+        )}
 
+        {/* 表單 */}
+        <div className="flex flex-col gap-4">
           {/* 案場代號 */}
           <div className="flex flex-col gap-2">
-            <label htmlFor="site_code" className="text-sm font-medium text-white/80">
-              案場代號
-            </label>
+            <label className="text-sm text-white/80">案場代號</label>
             <input
-              type="text"
               id="site_code"
-              placeholder="請輸入案場代號，例如：A001"
               value={formData.site_code}
               onChange={handleChange}
-              className="w-full rounded-lg border border-white/10 bg-black/20 px-4 py-3 text-sm text-white placeholder-white/30 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-all"
+              placeholder="例如：A001"
+              className="rounded-lg bg-black/20 px-4 py-3 text-white placeholder-white/30 border border-white/10 focus:border-primary focus:ring-1 focus:ring-primary outline-none"
             />
           </div>
 
           {/* 案場名稱 */}
           <div className="flex flex-col gap-2">
-            <label htmlFor="site_name" className="text-sm font-medium text-white/80">
-              案場名稱
-            </label>
+            <label className="text-sm text-white/80">案場名稱</label>
             <input
-              type="text"
               id="site_name"
-              placeholder="請輸入案場名稱"
               value={formData.site_name}
               onChange={handleChange}
-              className="w-full rounded-lg border border-white/10 bg-black/20 px-4 py-3 text-sm text-white placeholder-white/30 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-all"
+              placeholder="請輸入案場名稱"
+              className="rounded-lg bg-black/20 px-4 py-3 text-white placeholder-white/30 border border-white/10 focus:border-primary focus:ring-1 focus:ring-primary outline-none"
             />
           </div>
 
           {/* 地點 */}
           <div className="flex flex-col gap-2">
-            <label htmlFor="location" className="text-sm font-medium text-white/80">
-              地點
-            </label>
+            <label className="text-sm text-white/80">地點</label>
             <input
-              type="text"
               id="location"
-              placeholder="例如：嘉義縣太保市"
               value={formData.location}
               onChange={handleChange}
-              className="w-full rounded-lg border border-white/10 bg-black/20 px-4 py-3 text-sm text-white placeholder-white/30 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-all"
+              placeholder="例如：嘉義縣太保市"
+              className="rounded-lg bg-black/20 px-4 py-3 text-white placeholder-white/30 border border-white/10 focus:border-primary focus:ring-1 focus:ring-primary outline-none"
             />
           </div>
-
         </div>
 
         {/* 按鈕 */}
@@ -108,7 +138,6 @@ export default function CreateSiteModal({ onClose, onSubmit }) {
             確認新增
           </button>
         </div>
-
       </div>
     </div>
   );

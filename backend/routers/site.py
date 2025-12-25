@@ -42,22 +42,51 @@ def list_sites(user_id: int, db: Session = Depends(get_db)):
 # =========================
 @router.post("/create")
 def create_site(payload: CreateSite, db: Session = Depends(get_db)):
+
+    # ✅ 1. 欄位完整性檢查（避免空字串）
+    if not payload.site_code or not payload.site_name or not payload.location:
+        raise HTTPException(
+            status_code=400,
+            detail="請完整填寫案場代號、案場名稱與地點"
+        )
+
+    # ✅ 2. 確認使用者存在
     user = db.query(User).filter(User.user_id == payload.user_id).first()
     if not user:
-        raise HTTPException(status_code=400, detail="指定的 user_id 不存在")
+        raise HTTPException(status_code=400, detail="使用者不存在")
 
+    # ✅ 3. 檢查「同一使用者 + 案場代號」是否重複
+    exists = (
+        db.query(Site)
+        .filter(
+            Site.user_id == payload.user_id,
+            Site.site_code == payload.site_code
+        )
+        .first()
+    )
+
+    if exists:
+        raise HTTPException(
+            status_code=400,
+            detail="此案場代號已被建立"
+        )
+
+    # ✅ 4. 建立案場
     new_site = Site(
         site_code=payload.site_code,
         site_name=payload.site_name,
         location=payload.location,
         user_id=payload.user_id,
     )
+
     db.add(new_site)
     db.commit()
     db.refresh(new_site)
 
-    return {"message": "案場建立成功", "site_id": new_site.site_id}
-
+    return {
+        "message": "案場建立成功",
+        "site_id": new_site.site_id
+    }
 
 # =========================
 #  上傳資料（重點）
@@ -220,20 +249,50 @@ async def upload_site_data(
 # =========================
 #  更新案場
 # =========================
+# =========================
+#  更新案場
+# =========================
 @router.put("/{site_id}")
 def update_site(site_id: int, payload: UpdateSite, db: Session = Depends(get_db)):
     site = db.query(Site).filter(Site.site_id == site_id).first()
     if not site:
         raise HTTPException(status_code=404, detail="site not found")
 
-    site.site_code = payload.site_code
-    site.site_name = payload.site_name
-    site.location = payload.location
+    # ✅ 如果有傳 site_code，才檢查重複
+    if payload.site_code and payload.site_code != site.site_code:
+        exists = (
+            db.query(Site)
+            .filter(
+                Site.user_id == site.user_id,
+                Site.site_code == payload.site_code,
+                Site.site_id != site.site_id   # 🔥 排除自己
+            )
+            .first()
+        )
+
+        if exists:
+            raise HTTPException(
+                status_code=400,
+                detail="該案場代號已存在，請使用其他代號"
+            )
+
+    # ✅ 只更新有傳的欄位
+    if payload.site_code is not None:
+        site.site_code = payload.site_code
+
+    if payload.site_name is not None:
+        site.site_name = payload.site_name
+
+    if payload.location is not None:
+        site.location = payload.location
 
     db.commit()
     db.refresh(site)
 
-    return {"message": "site updated", "site_id": site.site_id}
+    return {
+        "message": "site updated",
+        "site_id": site.site_id
+    }
 
 
 # =========================

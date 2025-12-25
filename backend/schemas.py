@@ -6,11 +6,11 @@ from typing import Optional, Dict, Any
 
 class RegisterUser(BaseModel):
     user_name: str
-    user_email: EmailStr
+    user_account: str 
     user_pw: str
 
 class LoginUser(BaseModel):
-    user_email: EmailStr
+    user_account: str
     user_pw: str
 
 

@@ -1,13 +1,20 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 export default function LoginModal({
   onClose,
   onSwitchToRegister,
   onLoginSuccess,
 }) {
-  const [email, setEmail] = useState("");
+  const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
   const [msg, setMsg] = useState("");
+
+  // Modal 打開時清空
+  useEffect(() => {
+    setAccount("");
+    setPassword("");
+    setMsg("");
+  }, []);
 
   const login = async (e) => {
     e.preventDefault();
@@ -18,7 +25,7 @@ export default function LoginModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          user_email: email,   // 👈 改成 email
+          user_account: account,
           user_pw: password,
         }),
       });
@@ -34,45 +41,51 @@ export default function LoginModal({
       localStorage.setItem("user_id", data.user_id);
 
       onLoginSuccess?.(data);
-      onClose?.();
+      onClose();
     } catch {
       setMsg("伺服器連線錯誤");
     }
   };
 
-  const handleModalClick = (e) => e.stopPropagation();
-
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-md rounded-2xl bg-background-dark p-8 shadow-lg"
-        onClick={handleModalClick}
+        className="relative w-full max-w-md rounded-2xl bg-background-dark p-8"
+        onClick={(e) => e.stopPropagation()}
       >
         <button
-          type="button"
           onClick={onClose}
           className="absolute top-4 right-4 text-white/70"
         >
           ✕
         </button>
 
-        <h2 className="text-2xl font-bold text-white mb-4">登入系統</h2>
+        <h2 className="text-2xl text-white mb-4">登入系統</h2>
 
         {msg && <p className="text-red-400 mb-2">{msg}</p>}
 
-        <form className="flex flex-col gap-4" onSubmit={login}>
+        {/* ⭐ 關鍵 */}
+        <form
+          autoComplete="off"
+          className="flex flex-col gap-4"
+          onSubmit={login}
+        >
+          <input type="text" style={{ display: "none" }} />
+
           <div>
             <label className="text-white/80 text-sm">電子信箱</label>
             <input
               type="email"
+              autoComplete="off"
+              name="login_account"
+              value={account}
+              onChange={(e) => setAccount(e.target.value)}
               className="w-full rounded-lg bg-white/10 px-4 py-3 text-white"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
               placeholder="請輸入電子信箱"
+              required
             />
           </div>
 
@@ -80,18 +93,17 @@ export default function LoginModal({
             <label className="text-white/80 text-sm">密碼</label>
             <input
               type="password"
-              className="w-full rounded-lg bg-white/10 px-4 py-3 text-white"
-              required
+              autoComplete="new-password"
+              name="login_password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              className="w-full rounded-lg bg-white/10 px-4 py-3 text-white"
               placeholder="請輸入密碼"
+              required
             />
           </div>
 
-          <button
-            type="submit"
-            className="mt-4 w-full rounded-lg bg-primary py-3 text-background-dark font-bold"
-          >
+          <button className="mt-4 w-full bg-primary py-3 rounded-lg font-bold">
             登入
           </button>
         </form>

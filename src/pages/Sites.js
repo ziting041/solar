@@ -49,6 +49,48 @@ export default function Sites({
     );
   };
 
+  const handleEditSiteSubmit = async (payload) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/site/${payload.site_id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          site_code: payload.site_code,
+          site_name: payload.site_name,
+          location: payload.location,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.detail || "更新失敗");
+      }
+
+      // ✅ 關鍵：更新 sites state（React 才會立刻 re-render）
+      setSites((prev) =>
+        prev.map((s) =>
+          s.site_id === payload.site_id
+            ? {
+                ...s,
+                site_code: payload.site_code,
+                site_name: payload.site_name,
+                location: payload.location,
+              }
+            : s
+        )
+      );
+
+      // ✅ 關閉編輯 Modal（一定要）
+      onOpenEditSite(null);
+
+    } catch (err) {
+      throw err; // 給 Modal 顯示紅字錯誤
+    }
+  };
+
   /* ===============================
      批次刪除（只開 Modal）
   =============================== */
