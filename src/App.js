@@ -234,8 +234,7 @@ export default function App() {
         {editingSite && (
           <EditSiteModal
             site={editingSite}
-            onClose={closeEditSite}
-            onSubmit={submitEditSite}
+            onClose={() => setEditingSite(null)}
           />
         )}
       </>

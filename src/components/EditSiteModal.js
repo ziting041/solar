@@ -42,6 +42,8 @@ export default function EditSiteModal({ site, onClose, onUpdated }) {
         ...site,
         ...form,
       });
+      
+      window.dispatchEvent(new Event("site-updated"));
 
       onClose();
 
