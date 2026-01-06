@@ -36,24 +36,22 @@ BIN_CONFIG = {
 }
 
 def build_plots(df: pd.DataFrame, outlier_mask=None):
+    if outlier_mask is None:
+        outlier_mask = pd.Series(False, index=df.index)
+    outlier_mask = outlier_mask.reindex(df.index, fill_value=False)
+
     variables = ["EAC", "GI", "TM"]
     hist = {}
 
+    # 直方圖：顯示所有資料（包含離群值），只 dropna
     for v in variables:
-        s = df[v]
-
-        if outlier_mask is not None:
-            s = s[~outlier_mask]
-
-        s = s.dropna()
+        s = df[v].dropna()
 
         if len(s) < 5:
             hist[v] = {"bins": [], "counts": []}
             continue
 
-        # ✅ 完全模擬 seaborn / matplotlib 預設
         counts, bins = np.histogram(s, bins=10)
-
         hist[v] = {
             "bins": bins.tolist(),
             "counts": counts.tolist()
@@ -128,6 +126,7 @@ def visualize_data(
     iqr_factor: float = Query(1.5),
     z_threshold: float = Query(3.0),
     isolation_contamination: float = Query(0.1),
+    remove_outliers: bool = Query(False),  # 新增參數
     db: Session = Depends(get_db),
 ):
 
@@ -148,7 +147,7 @@ def visualize_data(
         "the_date": e.the_date,
         "hour": e.the_hour,
     } for e in entries])
-
+    df = df.drop_duplicates(subset=["the_date", "hour"], keep="first")
     df["the_date"] = pd.to_datetime(df["the_date"])
     df["month"] = df["the_date"].dt.month
     df["day_of_year"] = df["the_date"].dt.dayofyear
@@ -168,53 +167,73 @@ def visualize_data(
 
     plots_stage1 = build_plots(df1)
 
-    # ===============================
-    # Stage 2：離群值
+   # ===============================
+    # Stage 2：離群值（標記 + 可選移除）
     # ===============================
     df2 = df1.copy()
-    outlier_mask = pd.Series(False, index=df2.index)
-    cols = ["EAC", "GI", "TM"]
 
+    # 預設不標記
+    outlier_mask_raw = pd.Series(False, index=df.index)      # 用於 raw stage
+    outlier_mask_stage1 = pd.Series(False, index=df1.index)  # 用於 stage1
+    outlier_mask_stage2 = pd.Series(False, index=df2.index)  # 用於 stage2（預設 false）
+
+    cols = ["EAC", "GI", "TM"]
     if outlier_method == "iqr_single":
         cols = ["EAC"]
 
-    if outlier_method.startswith("iqr"):
-        for col in cols:
-            s = df2[col].dropna()
-            if len(s) < 10:
-                continue
-            q1, q3 = s.quantile([0.25, 0.75])
-            iqr = q3 - q1
-            if iqr == 0:
-                continue
-            lower = q1 - iqr_factor * iqr
-            upper = q3 + iqr_factor * iqr
-            outlier_mask |= (df2[col] < lower) | (df2[col] > upper)
+    if outlier_method != "none":
+        # 在 df2 上計算離群值 mask（因為離群檢測是在 GI/TM 清理後進行）
+        if outlier_method.startswith("iqr"):
+            for col in cols:
+                s = df2[col].dropna()
+                if len(s) < 10:
+                    continue
+                q1, q3 = s.quantile([0.25, 0.75])
+                iqr = q3 - q1
+                if iqr == 0:
+                    continue
+                lower = q1 - iqr_factor * iqr
+                upper = q3 + iqr_factor * iqr
+                outlier_mask_stage2 |= (df2[col] < lower) | (df2[col] > upper)
 
-    elif outlier_method == "zscore":
-        for col in cols:
-            s = df2[col].dropna()
-            if s.std() == 0:
-                continue
-            z = (df2[col] - s.mean()) / s.std()
-            outlier_mask |= z.abs() > z_threshold
+        elif outlier_method == "zscore":
+            for col in cols:
+                s = df2[col].dropna()
+                if len(s) == 0 or s.std() == 0:
+                    continue
+                z = np.abs((df2[col] - s.mean()) / s.std())
+                outlier_mask_stage2 |= z > z_threshold
 
-    elif outlier_method == "isolation_forest":
-        sub = df2[cols].dropna()
-        if len(sub) > 20:
-            iso = IsolationForest(
-                contamination=isolation_contamination,
-                random_state=42
-            )
-            pred = iso.fit_predict(sub)
-            mask = pd.Series(pred == -1, index=sub.index)
-            outlier_mask.loc[mask.index] = mask
+        elif outlier_method == "isolation_forest":
+            sub = df2[cols].dropna()
+            if len(sub) > 20:
+                iso = IsolationForest(contamination=isolation_contamination, random_state=42)
+                pred = iso.fit_predict(sub)
+                mask = pd.Series(pred == -1, index=sub.index)
+                outlier_mask_stage2.loc[mask.index] = mask
 
-    df2.loc[outlier_mask, cols] = np.nan
-    df2 = df2.sort_values(["the_date", "hour"])
-    df2[cols] = df2[cols].interpolate("linear", limit_direction="both")
+        # 將 df2 的 mask 重新對齊到 df 和 df1 的 index（補 False）
+        outlier_mask_raw = outlier_mask_stage2.reindex(df.index, fill_value=False)
+        outlier_mask_stage1 = outlier_mask_stage2.reindex(df1.index, fill_value=False)
 
-    plots_stage2 = build_plots(df2, outlier_mask)
+        # 傳給各 stage 的 mask
+        plots_raw = build_plots(df, outlier_mask_raw)
+        plots_stage1 = build_plots(df1, outlier_mask_stage1)
+
+        if remove_outliers:
+            # 真正移除並插補
+            df2.loc[outlier_mask_stage2, cols] = np.nan
+            df2 = df2.sort_values(["the_date", "hour"])
+            df2[cols] = df2[cols].interpolate("linear", limit_direction="both")
+            plots_stage2 = build_plots(df2, pd.Series(False, index=df2.index))  # 清理後無離群
+        else:
+            plots_stage2 = build_plots(df2, outlier_mask_stage2)  # 只標示
+
+    else:
+        # 沒開離群檢測
+        plots_raw = build_plots(df)
+        plots_stage1 = build_plots(df1)
+        plots_stage2 = build_plots(df1)
 
     return safe_json({
         "stages": {

@@ -39,10 +39,6 @@ function HistogramSVG({ bins = [], counts = [], height = 160 }) {
         const x0 = mapX(b0);
         const w0 = mapX(b1) - x0;
 
-        const y = mapY(c);
-        const h = height - y - 4;
-
-        // 🔑 柱子變細但不留縫（置中縮放）
         const scale = 0.85;        // 可調 0.7 ~ 0.85
         const w = w0 * scale;
         const x = x0 + (w0 - w) / 2;
@@ -51,9 +47,9 @@ function HistogramSVG({ bins = [], counts = [], height = 160 }) {
           <rect
             key={i}
             x={x}
-            y={y}
+            y={mapY(c)}
             width={w}
-            height={h}
+            height={height - mapY(c) - 4}
             fill="#60a5fa"
             opacity="0.85"
           />
@@ -268,7 +264,8 @@ function RenderPairScatter({ rowVar, colVar, plots }) {
   const points = pairData.x.map((x, idx) => ({
     x,
     y: pairData.y[idx],
-    is_outlier: pairData.is_outlier ? pairData.is_outlier[idx] : false
+    is_outlier: pairData.is_outlier ? pairData.is_outlier[idx] : false,
+    index: idx + 1  // 第幾筆，從 1 開始
   }));
 
   const hasOutliers = points.some(p => p.is_outlier);
@@ -277,16 +274,16 @@ function RenderPairScatter({ rowVar, colVar, plots }) {
     datasets: [
       {
         label: "正常值",
-        data: points.filter(p => !p.is_outlier).map(p => ({ x: p.x, y: p.y })),
-        backgroundColor: "rgba(96, 165, 250, 0.7)",   // 藍色
+        data: points.filter(p => !p.is_outlier).map(p => ({ x: p.x, y: p.y, idx: p.index })),
+        backgroundColor: "rgba(96, 165, 250, 0.7)",   // 原藍色，不變
         pointRadius: 3,
       },
       ...(hasOutliers ? [{
         label: "離群值",
-        data: points.filter(p => p.is_outlier).map(p => ({ x: p.x, y: p.y })),
-        backgroundColor: "rgba(239, 68, 68, 0.9)",    // 紅色
-        pointRadius: 5,
-        pointStyle: "triangle", // 可選：用不同形狀更明顯
+        data: points.filter(p => p.is_outlier).map(p => ({ x: p.x, y: p.y, idx: p.index })),
+        backgroundColor: "rgba(239, 68, 68, 0.9)",    // 原紅色
+        pointRadius: 5,                               // 原大小，不變大
+        pointStyle: "circle",                         // 改回圓點
       }] : []),
     ],
   };
@@ -306,11 +303,9 @@ function RenderPairScatter({ rowVar, colVar, plots }) {
         callbacks: {
           label: (context) => {
             const point = context.raw;
-            const isOutlier = points.find(
-              p => p.x === point.x && p.y === point.y
-            )?.is_outlier;
-
-            return `${context.dataset.label}: (${point.x.toFixed(2)}, ${point.y.toFixed(2)})${isOutlier ? " ← 離群值" : ""}`;
+            const isOutlier = context.dataset.label === "離群值";
+            const idx = point.idx;
+            return `${context.dataset.label} (第 ${idx} 筆): (${point.x.toFixed(2)}, ${point.y.toFixed(2)})${isOutlier ? " ← 離群值" : ""}`;
           },
         },
       },
@@ -351,7 +346,7 @@ function RenderPairScatter({ rowVar, colVar, plots }) {
     <div className="relative h-64">
       <Scatter data={chartData} options={options} />
       <div className="absolute bottom-2 right-2 text-xs text-white/60">
-        共 {points.length} 點{hasOutliers ? "，紅色三角形為離群值" : ""}
+        共 {points.length} 點{hasOutliers }
       </div>
     </div>
   );
@@ -365,10 +360,10 @@ export default function DataCleaning({
   onNavigateToSites,
   onLogout,
 }) {
-  const [outlierMethod, setOutlierMethod] = useState("none");
-  const [iqrFactor, setIqrFactor] = useState(1.5);
-  const [zThreshold, setZThreshold] = useState(3.0);
-  const [isolationContamination, setIsolationContamination] = useState(0.1);
+  const [outlierMethod, setOutlierMethod] = useState("iqr_comprehensive");
+  const [iqrFactor, setIqrFactor] = useState(2.0);
+  const [zThreshold, setZThreshold] = useState(3.5);
+  const [isolationContamination, setIsolationContamination] = useState(0.05);
 
   const [fileName, setFileName] = useState(propFileName || localStorage.getItem("lastUploadedFile") || "");
   const [stages, setStages] = useState(null); // 可留可刪（目前未使用）
@@ -391,10 +386,11 @@ export default function DataCleaning({
       try {
         const params = new URLSearchParams({
           file_name: fileName,
-          outlier_method: removeOutliers ? outlierMethod : "none",
+          outlier_method: outlierMethod,
           iqr_factor: iqrFactor.toString(),
           z_threshold: zThreshold.toString(),
           isolation_contamination: isolationContamination.toString(),
+          remove_outliers: removeOutliers.toString(),  // 新增參數傳給後端
         });
 
         const res = await fetch(`http://127.0.0.1:8000/visualize-data/?${params.toString()}`);
@@ -419,7 +415,7 @@ export default function DataCleaning({
     try {
       const body = {
         file_name: fileName,
-        outlier_method: removeOutliers ? outlierMethod : "none",
+        outlier_method: outlierMethod,
         iqr_factor: parseFloat(iqrFactor),
         z_threshold: parseFloat(zThreshold),
         isolation_contamination: parseFloat(isolationContamination),
@@ -605,75 +601,74 @@ export default function DataCleaning({
                 onChange={(e) => setRemoveOutliers(e.target.checked)}
                 className="w-5 h-5 text-blue-600 rounded bg-gray-800 border-gray-700"
               />
-              <span className="text-sm font-medium">移除離群值並預覽</span> {/* 修改文字，讓更清楚 */}
+              <span className="text-sm font-medium">
+                {removeOutliers ? "已移除離群值（插補後）" : "僅標示離群值（紅色圓點）"}
+              </span>
             </label>
 
-            {removeOutliers && (
-              <>
-                <select
-                  value={outlierMethod}
-                  onChange={(e) => setOutlierMethod(e.target.value)}
-                  className="px-4 py-2 rounded-lg bg-gray-800 text-white border border-gray-700 text-sm"
-                >
-                  <option value="iqr_comprehensive">綜合 IQR（EAC+GI+TM）</option>
-                  <option value="iqr_single">單一 IQR（僅 EAC）</option>
-                  <option value="zscore">Z-Score</option>
-                  <option value="isolation_forest">Isolation Forest</option>
-                </select>
+            <select
+              value={outlierMethod}
+              onChange={(e) => setOutlierMethod(e.target.value)}
+              className="px-4 py-2 rounded-lg bg-gray-800 text-white border border-gray-700 text-sm"
+            >
+              <option value="none">無離群值檢測</option>
+              <option value="iqr_comprehensive">綜合 IQR（EAC+GI+TM）</option>
+              <option value="iqr_single">單一 IQR（僅 EAC）</option>
+              <option value="zscore">Z-Score</option>
+              <option value="isolation_forest">Isolation Forest</option>
+            </select>
 
-                {/* IQR 係數輸入 */}
-                {(outlierMethod === "iqr_comprehensive" || outlierMethod === "iqr_single") && (
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm text-white/70">IQR 係數：</span>
-                    <input
-                      type="number"
-                      min="0.5"
-                      max="5.0"
-                      step="0.1"
-                      value={iqrFactor}
-                      onChange={(e) => setIqrFactor(parseFloat(e.target.value) || 1.5)}
-                      className="w-24 px-3 py-2 text-sm bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <span className="text-xs text-gray-400">(建議 1.0~3.0)</span>
-                  </div>
-                )}
+            {/* IQR 係數輸入 */}
+            {(outlierMethod === "iqr_comprehensive" || outlierMethod === "iqr_single") && (
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-white/70">IQR 係數：</span>
+                <input
+                  type="number"
+                  min="0.5"
+                  max="5.0"
+                  step="0.1"
+                  value={iqrFactor}
+                  onChange={(e) => setIqrFactor(parseFloat(e.target.value) || 1.5)}
+                  className="w-24 px-3 py-2 text-sm bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <span className="text-xs text-gray-400">(建議 1.0~3.0)</span>
+              </div>
+            )}
 
-                {/* Z-Score 閾值輸入 */}
-                {outlierMethod === "zscore" && (
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm text-white/70">Z 分數閾值：</span>
-                    <input
-                      type="number"
-                      min="1.0"
-                      max="6.0"
-                      step="0.5"
-                      value={zThreshold}
-                      onChange={(e) => setZThreshold(parseFloat(e.target.value) || 3.0)}
-                      className="w-24 px-3 py-2 text-sm bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <span className="text-sm font-medium">σ</span>
-                  </div>
-                )}
+            {/* Z-Score 閾值輸入 */}
+            {outlierMethod === "zscore" && (
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-white/70">Z 分數閾值：</span>
+                <input
+                  type="number"
+                  min="1.0"
+                  max="6.0"
+                  step="0.5"
+                  value={zThreshold}
+                  onChange={(e) => setZThreshold(parseFloat(e.target.value) || 3.0)}
+                  className="w-24 px-3 py-2 text-sm bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <span className="text-sm font-medium">σ</span>
+              </div>
+            )}
 
-                {/* Isolation Forest 離群比例輸入 */}
-                {outlierMethod === "isolation_forest" && (
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm text-white/70">預期離群比例：</span>
-                    <input
-                      type="number"
-                      min="0.01"
-                      max="0.5"
-                      step="0.01"
-                      value={isolationContamination}
-                      onChange={(e) => setIsolationContamination(parseFloat(e.target.value) || 0.1)}
-                      className="w-28 px-3 py-2 text-sm bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <span className="text-sm font-medium">
-                      ({(isolationContamination * 100).toFixed(1)}%)
-                    </span>
-                  </div>
-                )}
-              </>
+            {/* Isolation Forest 離群比例輸入 */}
+            {outlierMethod === "isolation_forest" && (
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-white/70">預期離群比例：</span>
+                <input
+                  type="number"
+                  min="0.01"
+                  max="0.5"
+                  step="0.01"
+                  value={isolationContamination}
+                  onChange={(e) => setIsolationContamination(parseFloat(e.target.value) || 0.1)}
+                  className="w-28 px-3 py-2 text-sm bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <span className="text-sm font-medium">
+                  ({(isolationContamination * 100).toFixed(1)}%)
+                </span>
+              </div>
             )}
           </div>
         </div>
@@ -687,7 +682,14 @@ export default function DataCleaning({
       {/* 底部按鈕 */}
       <div className="sticky bottom-0 w-full border-t border-white/10 bg-background-dark/90 backdrop-blur-lg p-4 px-6 z-40">
         <div className="mx-auto flex max-w-6xl items-center justify-between">
-          <div className="text-sm text-white/60">已根據檔案 {fileName} 產生視覺化 {removeOutliers ? `(刪除離群值後)` : `(標記離群值，未刪除)`}</div>
+          <div className="text-sm text-white/60">
+            已根據檔案 {fileName} 產生視覺化{" "}
+            {outlierMethod !== "none"
+              ? removeOutliers
+                ? "（已移除離群值並插補）"
+                : "（紅色圓點標示離群值，尚未移除）"
+              : "（未進行離群值檢測）"}
+          </div>
           <div className="flex items-center gap-4">
             <button
               onClick={onBack}
@@ -707,7 +709,7 @@ export default function DataCleaning({
             {/* 🔹 原本的儲存 */}
             <button
               onClick={handleSaveCleaned}
-              disabled={loading || saving || !plots}
+              disabled={loading || saving || !plots || outlierMethod === "none"}
               className="rounded-lg bg-primary px-8 py-2 text-sm font-bold text-background-dark disabled:opacity-50"
             >
               確認清理並繼續 → 單位調整
