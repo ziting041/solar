@@ -1,5 +1,5 @@
 // src/App.js
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 // ===== Public (未登入) =====
 import PublicHome from "./pages/PublicHome";
@@ -26,6 +26,30 @@ export default function App() {
   // ==============================
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+
+  // 👇 新增這一段：頁面載入時自動檢查 localStorage
+  useEffect(() => {
+    const storedUser = localStorage.getItem("user");
+    const storedPage = localStorage.getItem("currentPage");
+
+    if (storedUser) {
+      try {
+        const userData = JSON.parse(storedUser);
+        setCurrentUser(userData);
+        setIsLoggedIn(true);
+
+        if (storedPage) {
+          setCurrentPage(storedPage);   // ⭐ 回到原本頁面
+        } else {
+          setCurrentPage("dashboard");
+        }
+      } catch (error) {
+        console.error("localStorage user 資料損毀", error);
+        localStorage.removeItem("user");
+        localStorage.removeItem("currentPage");
+      }
+    }
+  }, []);
 
   // ==============================
   // Modal 狀態
@@ -69,7 +93,7 @@ export default function App() {
   const handleLoginSuccess = (user) => {
     setIsLoggedIn(true);
     setCurrentUser(user);
-    localStorage.setItem("user", JSON.stringify(user));
+    // localStorage.setItem("user", JSON.stringify(user));  // ← 刪掉這行（重複）
 
     setIsLoginModalOpen(false);
     setCurrentPage("dashboard");
@@ -79,6 +103,7 @@ export default function App() {
     setIsLoggedIn(false);
     setCurrentUser(null);
     localStorage.removeItem("user");
+    localStorage.removeItem("currentPage");
 
     setPredictInfo(null);
     setRestoredFromVisualization(false);
@@ -125,6 +150,7 @@ export default function App() {
   // ==============================
   const go = (page) => {
     setCurrentPage(page);
+    localStorage.setItem("currentPage", page); // ⭐ 關鍵
     window.scrollTo(0, 0);
   };
 
@@ -135,45 +161,33 @@ export default function App() {
   };
 
   const goPredict = () => {
-    if (!restoredFromVisualization) {
-      setPredictInfo(null);
-    }
+    setPredictInfo(null);
     setRestoredFromVisualization(false);
     go("start-predict");
   };
 
   const goSites = () => {
-    setPredictInfo(null);
-    setRestoredFromVisualization(false);
     go("site");
   };
 
-  const goDataCleaning = () => go("data-cleaning");
-  const goUnitAdjustment = () => go("unit-adjustment");
-  const goModelTraining = () => go("model-training");
-  const goReport = () => go("report");
-
-  const submitEditSite = async (data) => {
-    try {
-      const res = await fetch(
-        `http://127.0.0.1:8000/site/${data.site_id}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data),
-        }
-      );
-
-      if (res.ok) {
-        setEditingSite(null);
-        window.dispatchEvent(new Event("site-updated"));
-      }
-    } catch (err) {
-      console.error("更新案場失敗", err);
-    }
+  const goDataCleaning = () => {
+    go("data-cleaning");
   };
+
+  const goUnitAdjustment = () => {
+    go("unit-adjustment");
+  };
+
+  const goModelTraining = () => {
+    go("model-training");
+  };
+
+  const goReport = () => {
+    go("report");
+  };
+
   // ==============================
-  // 教學頁
+  // 使用者指南
   // ==============================
   if (currentPage === "user-guide") {
     return <UserGuide onFinish={() => go("home")} />;

@@ -13,36 +13,61 @@ import { Scatter } from "react-chartjs-2";
 
 ChartJS.register(PointElement, CategoryScale, LinearScale, Tooltip, Legend);
 
-// 小型直方圖 SVG
-function HistogramSVG({ bins = [], counts = [], height = 140 }) {
+// 小型直方圖 SVG（真正的 histogram：用 bin center + bin width）
+function HistogramSVG({ bins = [], counts = [], height = 160 }) {
   if (!bins || bins.length < 2 || !counts?.length) {
     return <div className="text-white/40 text-xs">無資料</div>;
   }
-  const maxCount = Math.max(...counts, 1);
-  const barCount = counts.length;
-  const width = 120;
-  const barWidth = width / barCount;
+
+  const width = 220;
+  const xMin = Math.min(...bins);
+  const xMax = Math.max(...bins);
+  const yMax = Math.max(...counts);
+
+  const mapX = (x) => ((x - xMin) / (xMax - xMin)) * width;
+  const mapY = (c) =>
+    height - (c / yMax) * (height - 8);
 
   return (
     <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-      <rect x="0" y="0" width={width} height={height} fill="none" />
       {counts.map((c, i) => {
-        const h = (c / maxCount) * (height - 20);
-        const x = i * barWidth + 1;
-        const y = height - h - 2;
+        const b0 = bins[i];
+        const b1 = bins[i + 1];
+        if (b1 === undefined) return null;
+
+        // 原本就該有的
+        const x0 = mapX(b0);
+        const w0 = mapX(b1) - x0;
+
+        const y = mapY(c);
+        const h = height - y - 4;
+
+        // 🔑 柱子變細但不留縫（置中縮放）
+        const scale = 0.85;        // 可調 0.7 ~ 0.85
+        const w = w0 * scale;
+        const x = x0 + (w0 - w) / 2;
+
         return (
           <rect
             key={i}
             x={x}
             y={y}
-            width={Math.max(1, barWidth - 2)}
+            width={w}
             height={h}
             fill="#60a5fa"
-            opacity="0.8"
-            rx="1"
+            opacity="0.85"
           />
         );
       })}
+
+      <line
+        x1="0"
+        x2={width}
+        y1={height - 4}
+        y2={height - 4}
+        stroke="#555"
+        strokeWidth="1"
+      />
     </svg>
   );
 }
@@ -214,6 +239,24 @@ function CorrelationHeatmapSVG({ variables = [], matrix = [], width = 900, heigh
 }
 
 // 散點圖（使用 Chart.js）
+const AXIS_CONFIG = {
+  EAC: {
+    min: 0,
+    max: 80,
+    step: 20,
+  },
+  GI: {
+    min: 0,
+    max: 1000,
+    step: 250,
+  },
+  TM: {
+    min: 0,
+    max: 60,
+    step: 10,
+  },
+};
+
 function RenderPairScatter({ rowVar, colVar, plots }) {
   const pairKey = `${colVar}__${rowVar}`;
   const pairData = plots?.pairs?.[pairKey];
@@ -248,27 +291,59 @@ function RenderPairScatter({ rowVar, colVar, plots }) {
     ],
   };
 
+  const xCfg = AXIS_CONFIG[colVar];
+  const yCfg = AXIS_CONFIG[rowVar];
+
   const options = {
     maintainAspectRatio: false,
     plugins: {
       legend: {
-        display: hasOutliers,  // 只在有離群值時顯示圖例
+        display: hasOutliers,
         position: "top",
-        labels: { color: "#ddd" }
+        labels: { color: "#ddd" },
       },
       tooltip: {
         callbacks: {
           label: (context) => {
             const point = context.raw;
-            const isOutlier = points.find(p => p.x === point.x && p.y === point.y)?.is_outlier;
+            const isOutlier = points.find(
+              p => p.x === point.x && p.y === point.y
+            )?.is_outlier;
+
             return `${context.dataset.label}: (${point.x.toFixed(2)}, ${point.y.toFixed(2)})${isOutlier ? " ← 離群值" : ""}`;
-          }
-        }
-      }
+          },
+        },
+      },
     },
     scales: {
-      x: { title: { display: true, text: colVar, color: "#ddd" }, ticks: { color: "#aaa" } },
-      y: { title: { display: true, text: rowVar, color: "#ddd" }, ticks: { color: "#aaa" } },
+      x: {
+        type: "linear",
+        min: xCfg?.min,
+        max: xCfg?.max,
+        ticks: {
+          stepSize: xCfg?.step,
+          color: "#aaa",
+        },
+        title: {
+          display: true,
+          text: colVar,
+          color: "#ddd",
+        },
+      },
+      y: {
+        type: "linear",
+        min: yCfg?.min,
+        max: yCfg?.max,
+        ticks: {
+          stepSize: yCfg?.step,
+          color: "#aaa",
+        },
+        title: {
+          display: true,
+          text: rowVar,
+          color: "#ddd",
+        },
+      },
     },
   };
 
@@ -296,7 +371,9 @@ export default function DataCleaning({
   const [isolationContamination, setIsolationContamination] = useState(0.1);
 
   const [fileName, setFileName] = useState(propFileName || localStorage.getItem("lastUploadedFile") || "");
-  const [plots, setPlots] = useState(null);
+  const [stages, setStages] = useState(null); // 可留可刪（目前未使用）
+  const [currentStage, setCurrentStage] = useState("raw"); // 可留
+  const plots = stages?.[currentStage] || null;
   const [columns, setColumns] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -323,7 +400,7 @@ export default function DataCleaning({
         const res = await fetch(`http://127.0.0.1:8000/visualize-data/?${params.toString()}`);
         if (!res.ok) throw new Error("載入視覺化資料失敗");
         const data = await res.json();
-        setPlots(data.plots);
+        setStages(data.stages);   // 三階段一次進來
         setColumns(data.columns);
       } catch (err) {
         console.error(err);
@@ -394,7 +471,12 @@ export default function DataCleaning({
                   return (
                     <div key={`${v1}_${v2}`} className="bg-black/20 p-4 rounded-xl">
                       <div className="text-sm text-white/80 mb-3 text-center">{v1}</div>
-                      <HistogramSVG bins={hist.bins} counts={hist.counts} height={160} />
+                      <HistogramSVG
+                        variable={v1}
+                        bins={hist.bins}
+                        counts={hist.counts}
+                        height={160}
+                      />
                     </div>
                   );
                 } else {
@@ -475,6 +557,26 @@ export default function DataCleaning({
 
       <main className="container mx-auto px-6 py-8 max-w-7xl">
         <h1 className="text-3xl font-bold mb-8 text-center">資料清理與視覺化</h1>
+
+        <div className="flex justify-center gap-4 mb-8">
+          {[
+            { key: "raw", label: "原始資料" },
+            { key: "after_gi_tm", label: "GI=0 刪除 / TM 補值後" },
+            { key: "after_outlier", label: "離群值處理＋內插後" },
+          ].map(s => (
+            <button
+              key={s.key}
+              onClick={() => setCurrentStage(s.key)}
+              className={`px-6 py-2 rounded-lg font-medium transition-all ${
+                currentStage === s.key
+                  ? "bg-blue-600 text-white shadow-lg"
+                  : "bg-gray-800 text-white/70 hover:bg-gray-700"
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
 
         {/* Tab 與 離群值開關 */}
         <div className="flex justify-between items-center mb-8">

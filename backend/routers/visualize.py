@@ -1,5 +1,4 @@
-# backend/routers/visualize.py
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, Query, HTTPException, Depends
 from sqlalchemy.orm import Session
 import pandas as pd
 import numpy as np
@@ -8,248 +7,219 @@ from sklearn.ensemble import IsolationForest
 from database import get_db
 from models import SiteData
 
-router = APIRouter(prefix="/visualize", tags=["Visualize"])
+router = APIRouter(tags=["Visualize"])
 
 
-# =========================================================
-# 把 NaN / inf 轉成 JSON 合法的 None
-# =========================================================
+# ===============================
+# JSON 安全處理
+# ===============================
 def safe_json(obj):
     if isinstance(obj, dict):
         return {k: safe_json(v) for k, v in obj.items()}
     elif isinstance(obj, list):
         return [safe_json(v) for v in obj]
-    elif isinstance(obj, float):
-        if np.isnan(obj) or np.isinf(obj):
-            return None
-        return obj
     elif isinstance(obj, (np.integer, np.floating)):
         v = obj.item()
-        if isinstance(v, float) and (np.isnan(v) or np.isinf(v)):
-            return None
-        return v
+        return None if (isinstance(v, float) and (np.isnan(v) or np.isinf(v))) else v
+    elif isinstance(obj, float):
+        return None if np.isnan(obj) or np.isinf(obj) else obj
     return obj
 
 
-# =========================================================
-# API
-# =========================================================
-@router.get("/site-data")
-def visualize_site_data(
-    data_id: int = Query(...),
-    remove_outliers: bool = Query(False),
-    outlier_method: str = Query("iqr", description="離群值偵測方法: none, iqr, zscore, isolation_forest, custom"),
-    iqr_factor: float = Query(1.5, description="IQR 方法的倍數"),
-    zscore_threshold: float = Query(3.0, description="Z-Score 方法的閾值"),
-    iso_contamination: float = Query(0.05, description="Isolation Forest 的污染率", ge=0.01, le=0.5),
-    db: Session = Depends(get_db)
-):
-    # -----------------------------------------------------
-    # 1️⃣ 撈資料
-    # -----------------------------------------------------
-    entry = db.query(SiteData).filter(SiteData.data_id == data_id).first()
-    if not entry:
-        raise HTTPException(status_code=404, detail="data_id 不存在")
+# ===============================
+# 圖表資料產生器
+# ===============================
+BIN_CONFIG = {
+    "EAC": np.array([0, 20, 40, 60, 80]),
+    "GI":  np.array([0, 250, 500, 750, 1000]),
+    "TM":  np.array([0, 20, 40, 60]),
+}
 
-    if not entry.json_data:
-        raise HTTPException(status_code=400, detail="此資料沒有 json data")
+def build_plots(df: pd.DataFrame, outlier_mask=None):
+    variables = ["EAC", "GI", "TM"]
+    hist = {}
 
-    # -----------------------------------------------------
-    # 2️⃣ DataFrame
-    # -----------------------------------------------------
-    df = pd.DataFrame(entry.json_data)
+    for v in variables:
+        s = df[v]
 
-    # -----------------------------------------------------
-    # 3️⃣ 處理時間欄位
-    # -----------------------------------------------------
-    time_col = None
-    possible_keywords = ["date", "time", "timestamp", "datetime", "recordtime", "thedate"]
-    for c in df.columns:
-        if any(keyword in c.lower() for keyword in possible_keywords):
-            time_col = c
-            df[c] = pd.to_datetime(df[c], errors="coerce")
-            break
+        if outlier_mask is not None:
+            s = s[~outlier_mask]
 
-    if time_col is None:
-        for c in df.columns:
-            if df[c].dtype == "object":
-                sample = df[c].dropna().head(5)
-                if pd.to_datetime(sample, errors="coerce").notna().all():
-                    time_col = c
-                    df[c] = pd.to_datetime(df[c], errors="coerce")
-                    break
+        s = s.dropna()
 
-    if time_col:
-        df["month"] = df[time_col].dt.month
-        df["day_of_year"] = df[time_col].dt.dayofyear
-        df["hour"] = df[time_col].dt.hour
-    else:
-        print("警告：完全找不到時間欄位，箱型圖將無法顯示")
+        if len(s) < 5:
+            hist[v] = {"bins": [], "counts": []}
+            continue
 
-    # -----------------------------------------------------
-    # 4️⃣ 建立離群點 mask（支援多種方法與係數調整）
-    # -----------------------------------------------------
-    outlier_mask = pd.Series(False, index=df.index)
+        # ✅ 完全模擬 seaborn / matplotlib 預設
+        counts, bins = np.histogram(s, bins=10)
 
-    # 決定使用哪個方法（初始顯示用 iqr，移除時用選擇的方法）
-    method_to_use = outlier_method if remove_outliers else "iqr"
+        hist[v] = {
+            "bins": bins.tolist(),
+            "counts": counts.tolist()
+        }
 
-    if method_to_use != "none":
-        columns = ["EAC", "GI", "TM"]
-
-        if method_to_use == "iqr":
-            for col in columns:
-                if col not in df.columns:
-                    continue
-                s = df[col].dropna()
-                if len(s) < 5:
-                    continue
-                q1 = s.quantile(0.25)
-                q3 = s.quantile(0.75)
-                iqr = q3 - q1
-                if iqr == 0:
-                    continue
-                lower = q1 - iqr_factor * iqr
-                upper = q3 + iqr_factor * iqr
-                mask = (df[col] < lower) | (df[col] > upper)
-                outlier_mask |= mask.fillna(False)
-
-        elif method_to_use == "zscore":
-            for col in columns:
-                if col not in df.columns:
-                    continue
-                s = df[col].dropna()
-                if len(s) < 5:
-                    continue
-                mean = s.mean()
-                std = s.std()
-                if std == 0:
-                    continue
-                mask = (df[col] - mean).abs() > zscore_threshold * std
-                outlier_mask |= mask.fillna(False)
-
-        elif method_to_use == "isolation_forest":
-            numeric_df = df[columns].select_dtypes(include=[np.number]).dropna()
-            if numeric_df.shape[0] > 10 and numeric_df.shape[1] > 0:
-                iso = IsolationForest(
-                    contamination=max(0.01, min(0.5, iso_contamination)),
-                    random_state=42
-                )
-                preds = iso.fit_predict(numeric_df)
-                iso_mask = pd.Series(preds == -1, index=numeric_df.index)
-                outlier_mask.loc[iso_mask.index] = iso_mask
-
-        elif method_to_use == "custom":
-            # 精準物理規則（避免誤標 TM vs GI 正常點）
-            if "GI" in df.columns and "EAC" in df.columns:
-                # GI 低但 EAC 高 → 異常
-                outlier_mask |= (df["GI"] < 100) & (df["EAC"] > 3.0)
-                outlier_mask |= (df["GI"] < 30) & (df["EAC"] > 1.5)
-
-            if "TM" in df.columns and "EAC" in df.columns:
-                # 高溫低換氣 → 異常
-                outlier_mask |= (df["TM"] > 40) & (df["EAC"] < 3.0)
-
-            # 冬天高輻射 → 可能異常，但不強制
-            # if "GI" in df.columns and "TM" in df.columns:
-            #     outlier_mask |= (df["GI"] > 700) & (df["TM"] < 22)
-
-    # -----------------------------------------------------
-    # 5️⃣ 移除離群值（僅在 remove_outliers=True 時）
-    # -----------------------------------------------------
-    if remove_outliers:
-        df = df.loc[~outlier_mask].reset_index(drop=True)
-        outlier_mask = outlier_mask.loc[df.index]
-
-    # -----------------------------------------------------
-    # 6️⃣ 統計量 & Sample
-    # -----------------------------------------------------
-    stats = df.describe(include="all").to_dict()
-    sample = df.head(20).to_dict(orient="records")
-
-    # -----------------------------------------------------
-    # 7️⃣ Scatter Matrix
-    # -----------------------------------------------------
-    scatter_cols = ["EAC", "GI", "TM"]
+    # ---------- Scatter ----------
     pairs = {}
-    for x in scatter_cols:
-        for y in scatter_cols:
+    for x in variables:
+        for y in variables:
             if x == y:
                 continue
-            if x in df.columns and y in df.columns:
-                sub = df[[x, y]].dropna()
-                pairs[f"{x}__{y}"] = {
-                    "x": sub[x].tolist(),
-                    "y": sub[y].tolist(),
-                }
 
-    scatter_matrix = {"columns": scatter_cols, "pairs": pairs}
+            sub = df[[x, y]].dropna()
 
-    # -----------------------------------------------------
-    # 8️⃣ Boxplot（只回傳 values）
-    # -----------------------------------------------------
-    def compute_box_values(df, group_col):
+            pairs[f"{x}__{y}"] = {
+                "x": sub[x].tolist(),
+                "y": sub[y].tolist(),
+                "is_outlier": (
+                    outlier_mask.loc[sub.index].tolist()
+                    if outlier_mask is not None
+                    else [False] * len(sub)
+                )
+            }
+
+    # ---------- Boxplot（保留離群點） ----------
+    def build_box(group_col):
         result = {}
-        if group_col not in df.columns or "EAC" not in df.columns:
-            return result
-
         for g, sub in df.groupby(group_col):
-            values = sub["EAC"].dropna().tolist()
-            if len(values) >= 1:
-                result[str(g)] = {"values": values}
+            v = sub["EAC"].dropna()
+            if len(v) < 5:
+                continue
+
+            q1 = v.quantile(0.25)
+            q3 = v.quantile(0.75)
+            iqr = q3 - q1
+            lower = q1 - 1.5 * iqr
+            upper = q3 + 1.5 * iqr
+
+            result[str(g)] = {
+                "min": float(v.min()),
+                "q1": float(q1),
+                "median": float(v.median()),
+                "q3": float(q3),
+                "max": float(v.max()),
+                "outliers": v[(v < lower) | (v > upper)].tolist()
+            }
         return result
 
-    boxplot_by_month = compute_box_values(df, "month")
-    boxplot_by_day = compute_box_values(df, "day_of_year")
-    boxplot_by_hour = compute_box_values(df, "hour")
+    return {
+        "scatter_matrix": {
+            "variables": variables,
+            "pairs": pairs,
+            "hist": hist
+        },
+        "boxplot_by_month": build_box("month"),
+        "boxplot_by_day": build_box("day_of_year"),
+        "boxplot_by_hour": build_box("hour"),
+        "boxplot_by_batch": {},
+        "correlation_heatmap": {
+            "variables": variables,
+            "matrix": df[variables].corr().values.tolist()
+        }
+    }
 
-    # -----------------------------------------------------
-    # 9️⃣ 回傳
-    # -----------------------------------------------------
-    return safe_json({
-        "columns": df.columns.tolist(),
-        "stats": stats,
-        "sample": sample,
-        "scatter_matrix": scatter_matrix,
-        "boxplot_by_month": boxplot_by_month,
-        "boxplot_by_day": boxplot_by_day,
-        "boxplot_by_hour": boxplot_by_hour,
-        "outlier_mask": outlier_mask.tolist(),
-    })
-# =========================================================
-# 給 UnitAdjustment 用：取得最新一筆資料（第一筆 row）
-# =========================================================
-@router.get("/latest")
-def get_latest_site_data(db: Session = Depends(get_db)):
-    # 取最新上傳的一筆 site_data
-    entry = (
+# ===============================
+# 主 API
+# ===============================
+@router.get("/visualize-data/")
+def visualize_data(
+    file_name: str = Query(...),
+    outlier_method: str = Query("none"),
+    iqr_factor: float = Query(1.5),
+    z_threshold: float = Query(3.0),
+    isolation_contamination: float = Query(0.1),
+    db: Session = Depends(get_db),
+):
+
+    entries = (
         db.query(SiteData)
-        .order_by(SiteData.created_at.desc())
-        .first()
+        .filter(SiteData.data_name == file_name)
+        .order_by(SiteData.the_date, SiteData.the_hour)
+        .all()
     )
 
-    if not entry:
-        return {"columns": [], "rows": []}
+    if not entries:
+        raise HTTPException(status_code=404, detail="找不到資料")
 
-    payload = entry.processed_json or entry.json_data
+    df = pd.DataFrame([{
+        "EAC": e.eac,
+        "GI": e.gi,
+        "TM": e.tm,
+        "the_date": e.the_date,
+        "hour": e.the_hour,
+    } for e in entries])
 
-    if not payload:
-        return {"columns": [], "rows": []}
+    df["the_date"] = pd.to_datetime(df["the_date"])
+    df["month"] = df["the_date"].dt.month
+    df["day_of_year"] = df["the_date"].dt.dayofyear
 
-    # payload 預期格式：
-    # {
-    #   "columns": [...],
-    #   "rows": [...]
-    # }
+    # ===============================
+    # Stage 0：原始
+    # ===============================
+    plots_raw = build_plots(df)
 
-    columns = payload.get("columns", [])
-    rows = payload.get("rows", [])
+    # ===============================
+    # Stage 1：GI / TM 清理
+    # ===============================
+    df1 = df[df["GI"] > 0].copy()
+    df1.loc[df1["TM"] == 0, "TM"] = np.nan
+    df1 = df1.sort_values(["the_date", "hour"])
+    df1["TM"] = df1["TM"].interpolate("linear", limit_direction="both")
 
-    if not rows:
-        return {"columns": columns, "rows": []}
+    plots_stage1 = build_plots(df1)
 
-    # ⚠️ 只回傳第一筆，UnitAdjustment 就夠用
-    return {
-        "columns": columns,
-        "rows": [rows[0]]
-    }
+    # ===============================
+    # Stage 2：離群值
+    # ===============================
+    df2 = df1.copy()
+    outlier_mask = pd.Series(False, index=df2.index)
+    cols = ["EAC", "GI", "TM"]
+
+    if outlier_method == "iqr_single":
+        cols = ["EAC"]
+
+    if outlier_method.startswith("iqr"):
+        for col in cols:
+            s = df2[col].dropna()
+            if len(s) < 10:
+                continue
+            q1, q3 = s.quantile([0.25, 0.75])
+            iqr = q3 - q1
+            if iqr == 0:
+                continue
+            lower = q1 - iqr_factor * iqr
+            upper = q3 + iqr_factor * iqr
+            outlier_mask |= (df2[col] < lower) | (df2[col] > upper)
+
+    elif outlier_method == "zscore":
+        for col in cols:
+            s = df2[col].dropna()
+            if s.std() == 0:
+                continue
+            z = (df2[col] - s.mean()) / s.std()
+            outlier_mask |= z.abs() > z_threshold
+
+    elif outlier_method == "isolation_forest":
+        sub = df2[cols].dropna()
+        if len(sub) > 20:
+            iso = IsolationForest(
+                contamination=isolation_contamination,
+                random_state=42
+            )
+            pred = iso.fit_predict(sub)
+            mask = pd.Series(pred == -1, index=sub.index)
+            outlier_mask.loc[mask.index] = mask
+
+    df2.loc[outlier_mask, cols] = np.nan
+    df2 = df2.sort_values(["the_date", "hour"])
+    df2[cols] = df2[cols].interpolate("linear", limit_direction="both")
+
+    plots_stage2 = build_plots(df2, outlier_mask)
+
+    return safe_json({
+        "stages": {
+            "raw": plots_raw,
+            "after_gi_tm": plots_stage1,
+            "after_outlier": plots_stage2
+        }
+    })
