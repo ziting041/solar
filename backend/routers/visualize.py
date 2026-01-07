@@ -90,12 +90,19 @@ def build_plots(df: pd.DataFrame, outlier_mask=None):
             lower = q1 - 1.5 * iqr
             upper = q3 + 1.5 * iqr
 
+            # 計算須線端點：數據中在界限內的最遠點
+            inside = v[(v >= lower) & (v <= upper)]
+            whisker_min = inside.min() if not inside.empty else np.nan
+            whisker_max = inside.max() if not inside.empty else np.nan
+
             result[str(g)] = {
                 "min": float(v.min()),
                 "q1": float(q1),
                 "median": float(v.median()),
                 "q3": float(q3),
                 "max": float(v.max()),
+                "whisker_min": float(whisker_min) if not np.isnan(whisker_min) else None,
+                "whisker_max": float(whisker_max) if not np.isnan(whisker_max) else None,
                 "outliers": v[(v < lower) | (v > upper)].tolist()
             }
         return result
@@ -107,7 +114,7 @@ def build_plots(df: pd.DataFrame, outlier_mask=None):
             "hist": hist
         },
         "boxplot_by_month": build_box("month"),
-        "boxplot_by_day": build_box("day_of_year"),
+        "boxplot_by_day": build_box("day"),
         "boxplot_by_hour": build_box("hour"),
         "boxplot_by_batch": {},
         "correlation_heatmap": {
@@ -150,7 +157,7 @@ def visualize_data(
     df = df.drop_duplicates(subset=["the_date", "hour"], keep="first")
     df["the_date"] = pd.to_datetime(df["the_date"])
     df["month"] = df["the_date"].dt.month
-    df["day_of_year"] = df["the_date"].dt.dayofyear
+    df["day"] = df["the_date"].dt.day
 
     # ===============================
     # Stage 0：原始

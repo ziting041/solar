@@ -82,7 +82,7 @@ function BoxplotSVG({ groups = {}, width = 900, height = 400 }) {
   let allVals = [];
   keys.forEach((k) => {
     const g = groups[k];
-    if (g) allVals.push(g.min, g.q1, g.median, g.q3, g.max);
+    if (g) allVals.push(g.whisker_min || g.min, g.q1, g.median, g.q3, g.whisker_max || g.max, ...(g.outliers || []));
   });
   const vmin = Math.min(...allVals);
   const vmax = Math.max(...allVals);
@@ -113,17 +113,17 @@ function BoxplotSVG({ groups = {}, width = 900, height = 400 }) {
         const q1y = mapY(g.q1);
         const q3y = mapY(g.q3);
         const medy = mapY(g.median);
-        const miny = mapY(g.min);
-        const maxy = mapY(g.max);
+        const whiskerMiny = mapY(g.whisker_min || g.min);
+        const whiskerMaxy = mapY(g.whisker_max || g.max);
         const boxLeft = cx - boxW / 2;
         const boxRight = cx + boxW / 2;
 
         return (
           <g key={k}>
-            <line x1={cx} x2={cx} y1={maxy} y2={q3y} stroke={lineColor} strokeWidth={1.5} />
-            <line x1={cx} x2={cx} y1={q1y} y2={miny} stroke={lineColor} strokeWidth={1.5} />
-            <line x1={boxLeft} x2={boxRight} y1={maxy} y2={maxy} stroke={lineColor} strokeWidth={1.5} />
-            <line x1={boxLeft} x2={boxRight} y1={miny} y2={miny} stroke={lineColor} strokeWidth={1.5} />
+            <line x1={cx} x2={cx} y1={whiskerMaxy} y2={q3y} stroke={lineColor} strokeWidth={1.5} />
+            <line x1={cx} x2={cx} y1={q1y} y2={whiskerMiny} stroke={lineColor} strokeWidth={1.5} />
+            <line x1={boxLeft} x2={boxRight} y1={whiskerMaxy} y2={whiskerMaxy} stroke={lineColor} strokeWidth={1.5} />
+            <line x1={boxLeft} x2={boxRight} y1={whiskerMiny} y2={whiskerMiny} stroke={lineColor} strokeWidth={1.5} />
             <rect
               x={boxLeft}
               y={q3y}
@@ -135,6 +135,17 @@ function BoxplotSVG({ groups = {}, width = 900, height = 400 }) {
               rx="2"
             />
             <line x1={boxLeft} x2={boxRight} y1={medy} y2={medy} stroke={lineColor} strokeWidth={3} />
+            {g.outliers?.map((outlier, oi) => (
+              <circle
+                key={oi}
+                cx={cx}
+                cy={mapY(outlier)}
+                r="3"
+                fill="red"
+                stroke="#900"
+                strokeWidth="1"
+              />
+            ))}
             <text x={cx} y={height - 10} textAnchor="middle" fontSize="12" fill="#ddd">
               {k}
             </text>
@@ -449,7 +460,6 @@ export default function DataCleaning({
     { key: "month", label: "Month" },
     { key: "day", label: "Day" },
     { key: "hour", label: "Hour" },
-    { key: "batch", label: "批次" }, // 新增
   ];
 
   const renderContent = () => {
@@ -522,9 +532,6 @@ export default function DataCleaning({
               )}
               {selectedBoxplot === "hour" && plots.boxplot_by_hour && (
                 <BoxplotSVG groups={plots.boxplot_by_hour} />
-              )}
-              {!plots[`boxplot_by_${selectedBoxplot}`] && (
-                <div className="text-white/40 text-lg">此分組無資料</div>
               )}
             </div>
           </div>
