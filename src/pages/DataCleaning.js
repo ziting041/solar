@@ -538,11 +538,12 @@ export default function DataCleaning({
         );
 
       case "correlation":
-        return plots.correlation_heatmap ? (
+        const corrPlots = stages?.after_gi_tm;  // 🔥 固定用 stage1
+        return corrPlots?.correlation_heatmap ? (
           <div className="flex justify-center">
             <CorrelationHeatmapSVG
-              variables={plots.correlation_heatmap.variables}
-              matrix={plots.correlation_heatmap.matrix}
+              variables={corrPlots.correlation_heatmap_full.variables}
+              matrix={corrPlots.correlation_heatmap_full.matrix}
             />
           </div>
         ) : (
