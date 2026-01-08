@@ -35,11 +35,10 @@ function HistogramSVG({ bins = [], counts = [], height = 160 }) {
         const b1 = bins[i + 1];
         if (b1 === undefined) return null;
 
-        // 原本就該有的
         const x0 = mapX(b0);
         const w0 = mapX(b1) - x0;
 
-        const scale = 0.85;        // 可調 0.7 ~ 0.85
+        const scale = 0.85;
         const w = w0 * scale;
         const x = x0 + (w0 - w) / 2;
 
@@ -73,7 +72,7 @@ function BoxplotSVG({ groups = {}, width = 900, height = 400 }) {
   const keys = Object.keys(groups)
     .map(Number)
     .sort((a, b) => a - b)
-    .map(String); // 確保月/日/時排序正確
+    .map(String);
 
   if (keys.length === 0) {
     return <div className="text-white/40 text-lg">無分組資料</div>;
@@ -104,10 +103,9 @@ function BoxplotSVG({ groups = {}, width = 900, height = 400 }) {
         const g = groups[k];
         if (!g) return null;
 
-        // 計算彩虹顏色：基於 i / keys.length 的 HSL（藍→橙→綠→紅→紫→粉）
-        const hue = (i / (keys.length - 1)) * 300; // 從 0 (藍) 到 300 (粉紅)，調整範圍以匹配圖片
-        const boxColor = `hsl(${hue}, 80%, 60%)`; // 飽和80%、亮度60% 產生鮮豔漸層
-        const lineColor = `hsl(${hue}, 70%, 40%)`; // 較暗版用於線條/中位線
+        const hue = (i / (keys.length - 1)) * 300;
+        const boxColor = `hsl(${hue}, 80%, 60%)`;
+        const lineColor = `hsl(${hue}, 70%, 40%)`;
 
         const cx = 40 + i * ((width - 80) / keys.length) + ((width - 80) / keys.length) / 2;
         const q1y = mapY(g.q1);
@@ -130,7 +128,7 @@ function BoxplotSVG({ groups = {}, width = 900, height = 400 }) {
               width={boxW}
               height={Math.max(2, q1y - q3y)}
               fill={boxColor}
-              opacity="0.4" // 半透明，讓顏色柔和如圖
+              opacity="0.4"
               stroke={lineColor}
               rx="2"
             />
@@ -200,7 +198,7 @@ function CorrelationHeatmapSVG({ variables = [], matrix = [], width = 900, heigh
                 y={y + cellSize / 2 + 4}
                 textAnchor="middle"
                 fontSize="11"
-                fill="#000"  // 或 "black"
+                fill="#000"
               >
                 {val.toFixed(3)}
               </text>
@@ -209,7 +207,6 @@ function CorrelationHeatmapSVG({ variables = [], matrix = [], width = 900, heigh
         })
       )}
 
-      {/* Y 軸標籤 */}
       {variables.map((varName, i) => (
         <text
           key={`row-${i}`}
@@ -223,7 +220,6 @@ function CorrelationHeatmapSVG({ variables = [], matrix = [], width = 900, heigh
         </text>
       ))}
 
-      {/* X 軸標籤 */}
       {variables.map((varName, j) => (
         <text
           key={`col-${j}`}
@@ -247,21 +243,9 @@ function CorrelationHeatmapSVG({ variables = [], matrix = [], width = 900, heigh
 
 // 散點圖（使用 Chart.js）
 const AXIS_CONFIG = {
-  EAC: {
-    min: 0,
-    max: 80,
-    step: 20,
-  },
-  GI: {
-    min: 0,
-    max: 1000,
-    step: 250,
-  },
-  TM: {
-    min: 0,
-    max: 60,
-    step: 10,
-  },
+  EAC: { min: 0, max: 80, step: 20 },
+  GI: { min: 0, max: 1000, step: 250 },
+  TM: { min: 0, max: 60, step: 10 },
 };
 
 function RenderPairScatter({ rowVar, colVar, plots }) {
@@ -276,7 +260,7 @@ function RenderPairScatter({ rowVar, colVar, plots }) {
     x,
     y: pairData.y[idx],
     is_outlier: pairData.is_outlier ? pairData.is_outlier[idx] : false,
-    index: idx + 1  // 第幾筆，從 1 開始
+    index: idx + 1,
   }));
 
   const hasOutliers = points.some(p => p.is_outlier);
@@ -286,15 +270,15 @@ function RenderPairScatter({ rowVar, colVar, plots }) {
       {
         label: "正常值",
         data: points.filter(p => !p.is_outlier).map(p => ({ x: p.x, y: p.y, idx: p.index })),
-        backgroundColor: "rgba(96, 165, 250, 0.7)",   // 原藍色，不變
+        backgroundColor: "rgba(96, 165, 250, 0.7)",
         pointRadius: 3,
       },
       ...(hasOutliers ? [{
         label: "離群值",
         data: points.filter(p => p.is_outlier).map(p => ({ x: p.x, y: p.y, idx: p.index })),
-        backgroundColor: "rgba(239, 68, 68, 0.9)",    // 原紅色
-        pointRadius: 5,                               // 原大小，不變大
-        pointStyle: "circle",                         // 改回圓點
+        backgroundColor: "rgba(239, 68, 68, 0.9)",
+        pointRadius: 5,
+        pointStyle: "circle",
       }] : []),
     ],
   };
@@ -305,11 +289,7 @@ function RenderPairScatter({ rowVar, colVar, plots }) {
   const options = {
     maintainAspectRatio: false,
     plugins: {
-      legend: {
-        display: hasOutliers,
-        position: "top",
-        labels: { color: "#ddd" },
-      },
+      legend: { display: hasOutliers, position: "top", labels: { color: "#ddd" } },
       tooltip: {
         callbacks: {
           label: (context) => {
@@ -324,31 +304,13 @@ function RenderPairScatter({ rowVar, colVar, plots }) {
     scales: {
       x: {
         type: "linear",
-        min: xCfg?.min,
-        max: xCfg?.max,
-        ticks: {
-          stepSize: xCfg?.step,
-          color: "#aaa",
-        },
-        title: {
-          display: true,
-          text: colVar,
-          color: "#ddd",
-        },
+        ticks: { stepSize: xCfg?.step, color: "#aaa" },
+        title: { display: true, text: colVar, color: "#ddd" },
       },
       y: {
         type: "linear",
-        min: yCfg?.min,
-        max: yCfg?.max,
-        ticks: {
-          stepSize: yCfg?.step,
-          color: "#aaa",
-        },
-        title: {
-          display: true,
-          text: rowVar,
-          color: "#ddd",
-        },
+        ticks: { stepSize: yCfg?.step, color: "#aaa" },
+        title: { display: true, text: rowVar, color: "#ddd" },
       },
     },
   };
@@ -383,16 +345,15 @@ export default function DataCleaning({
     propFileName || localStorage.getItem("lastUploadedFile") || ""
   );
 
-  const [stages, setStages] = useState(null);
+  const [stages, setStages] = useState(null); // { raw, after_gi_tm, after_outlier }
 
-  // ✅ 2️⃣ 再使用它們推導 currentStage
-  const currentStage = applyOutlier
+  const currentStageKey = applyOutlier
     ? "after_outlier"
     : applyGiTm
     ? "after_gi_tm"
     : "raw";
 
-  const plots = stages?.[currentStage] || null;
+  const plots = stages?.[currentStageKey] || null; // 目前要顯示的階段資料
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -413,6 +374,7 @@ export default function DataCleaning({
           iqr_factor: iqrFactor.toString(),
           z_threshold: zThreshold.toString(),
           isolation_contamination: isolationContamination.toString(),
+          remove_outliers: applyOutlier.toString(),
           apply_gi_tm: applyGiTm.toString(),
           apply_outlier: applyOutlier.toString(),
         });
@@ -420,7 +382,7 @@ export default function DataCleaning({
         const res = await fetch(`http://127.0.0.1:8000/visualize-data/?${params.toString()}`);
         if (!res.ok) throw new Error("載入視覺化資料失敗");
         const data = await res.json();
-        setStages(data.stages);   // 三階段一次進來
+        setStages(data.stages);
       } catch (err) {
         console.error(err);
         alert("載入資料失敗，請確認檔案是否存在");
@@ -463,7 +425,7 @@ export default function DataCleaning({
       if (!res.ok) throw new Error("儲存失敗");
       const result = await res.json();
       alert(`清理完成！新檔案：${result.new_file_name}\n行數：${result.rows_after_cleaning}`);
-      onNext(); // 進入下一步
+      onNext();
     } catch (err) {
       alert("儲存失敗，請稍後再試");
       console.error(err);
@@ -490,7 +452,10 @@ export default function DataCleaning({
 
     switch (selectedTab) {
       case "scatter":
-        return plots.scatter_matrix ? (
+        if (!plots.scatter_matrix) {
+          return <div className="text-white/40">無散佈矩陣資料</div>;
+        }
+        return (
           <div className="grid grid-cols-3 gap-6">
             {plots.scatter_matrix.variables.map((v1) =>
               plots.scatter_matrix.variables.map((v2) => {
@@ -499,11 +464,7 @@ export default function DataCleaning({
                   return (
                     <div key={`${v1}_${v2}`} className="bg-black/20 p-4 rounded-xl">
                       <div className="text-sm text-white/80 mb-3 text-center">{v1}</div>
-                      <HistogramSVG
-                        bins={hist.bins}
-                        counts={hist.counts}
-                        height={160}
-                      />
+                      <HistogramSVG bins={hist.bins} counts={hist.counts} height={160} />
                     </div>
                   );
                 } else {
@@ -519,8 +480,6 @@ export default function DataCleaning({
               })
             )}
           </div>
-        ) : (
-          <div className="text-white/40">無散佈矩陣資料</div>
         );
 
       case "boxplot":
@@ -542,9 +501,6 @@ export default function DataCleaning({
               ))}
             </div>
             <div className="flex justify-center">
-              {selectedBoxplot === "batch" && plots.boxplot_by_batch && (
-                <BoxplotSVG groups={plots.boxplot_by_batch} />
-              )}
               {selectedBoxplot === "month" && plots.boxplot_by_month && (
                 <BoxplotSVG groups={plots.boxplot_by_month} />
               )}
@@ -559,7 +515,7 @@ export default function DataCleaning({
         );
 
       case "correlation":
-        const corrPlots = stages?.raw;  // 🔥 固定用 stage1
+        const corrPlots = stages?.raw;
         return corrPlots?.correlation_heatmap_full ? (
           <div className="flex justify-center">
             <CorrelationHeatmapSVG
@@ -583,7 +539,6 @@ export default function DataCleaning({
       <main className="container mx-auto px-6 py-8 max-w-7xl">
         <h1 className="text-3xl font-bold mb-8 text-center">資料清理與視覺化</h1>
 
-        {/* Tab 與 離群值開關 */}
         <div className="flex flex-col gap-6 mb-8">
           <div className="flex gap-8 border-b border-white/10 pb-4 justify-center">
             {tabs.map((tab) => (
@@ -602,14 +557,13 @@ export default function DataCleaning({
           </div>
 
           <div className="flex flex-wrap items-center gap-8 bg-black/20 p-4 rounded-xl">
-            {/* GI / TM */}
             <label className="flex items-center gap-3 cursor-pointer">
               <input
                 type="checkbox"
                 checked={applyGiTm}
                 onChange={(e) => {
                   setApplyGiTm(e.target.checked);
-                  if (!e.target.checked) setApplyOutlier(false); // 關 GI/TM 就不能有離群值
+                  if (!e.target.checked) setApplyOutlier(false);
                 }}
                 className="w-5 h-5"
               />
@@ -618,7 +572,6 @@ export default function DataCleaning({
               </span>
             </label>
 
-            {/* 離群值 */}
             <div className={`flex flex-wrap items-center gap-4 ${!applyGiTm && "opacity-40"}`}>
               <label className="flex items-center gap-3 cursor-pointer">
                 <input
@@ -643,7 +596,6 @@ export default function DataCleaning({
                 <option value="isolation_forest">Isolation Forest</option>
               </select>
 
-              {/* IQR */}
               {outlierMethod.startsWith("iqr") && (
                 <div className="flex items-center gap-2">
                   <input
@@ -660,7 +612,6 @@ export default function DataCleaning({
                 </div>
               )}
 
-              {/* Z-score */}
               {outlierMethod === "zscore" && (
                 <div className="flex items-center gap-2">
                   <input
@@ -677,7 +628,6 @@ export default function DataCleaning({
                 </div>
               )}
 
-              {/* Isolation Forest */}
               {outlierMethod === "isolation_forest" && (
                 <div className="flex items-center gap-2">
                   <input
@@ -695,14 +645,13 @@ export default function DataCleaning({
               )}
             </div>
           </div>
-        </div> 
-        {/* 內容區 */}
+        </div>
+
         <div className="bg-[#1E1E1E]/80 backdrop-blur rounded-2xl p-8 shadow-2xl">
           {renderContent()}
         </div>
       </main>
 
-      {/* 底部按鈕 */}
       <div className="sticky bottom-0 w-full border-t border-white/10 bg-background-dark/90 backdrop-blur-lg p-4 px-6 z-40">
         <div className="mx-auto flex max-w-6xl items-center justify-between">
           <div className="text-sm text-white/60">
@@ -719,7 +668,6 @@ export default function DataCleaning({
               返回
             </button>
 
-            {/* 🔹 新增：直接下一步 */}
             <button
               onClick={onNext}
               className="rounded-lg border border-blue-400 px-6 py-2 text-sm font-bold text-blue-400 hover:bg-blue-400/10"
@@ -727,7 +675,6 @@ export default function DataCleaning({
               跳過清理 → 單位調整
             </button>
 
-            {/* 🔹 原本的儲存 */}
             <button
               onClick={handleSaveCleaned}
               disabled={loading || saving || !plots || !applyOutlier}
