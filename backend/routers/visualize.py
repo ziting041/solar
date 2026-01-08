@@ -105,27 +105,16 @@ def build_plots(df: pd.DataFrame, outlier_mask=None, corr_df_override=None):
         return result
 
     # ===============================
-    # Correlation（完全對齊舊圖）
-    # - 固定用原始 df
-    # - GI > 0 且 EAC > 0
-    # - 6 個變數
-    # - 不受 stage / 離群 / 插補影響
+    # Correlation（只用鎖死的原始資料）
     # ===============================
     corr_vars = ["EAC", "GI", "TM", "day", "hour", "month"]
 
-    corr_base = corr_df_override if corr_df_override is not None else df
+    # 只用 corr_df_override，不再 fallback
+    corr_base = corr_df_override[corr_vars]
 
-    # ✅ 文件條件：只刪 GI=0
-    corr_base = corr_base[corr_base["GI"] > 0]
+    corr_full = corr_base.corr(method="pearson")
 
-    # ✅ 文件做法：一次丟掉所有缺值（listwise）
-    corr_base = corr_base.dropna(subset=corr_vars)
-
-    if len(corr_base) >= 5:
-        corr_full = corr_base[corr_vars].corr()
-        corr_full_matrix = corr_full.values.tolist()
-    else:
-        corr_full_matrix = []
+    corr_full_matrix = corr_full.values.tolist()
 
     # ===============================
     # 最終輸出（只 return 一次）
@@ -180,6 +169,25 @@ def visualize_data(
     if not entries:
         raise HTTPException(status_code=404, detail="找不到資料")
 
+    # 🔒 correlation 專用資料（完全原始）
+    df_corr_doc = pd.DataFrame([{
+        "EAC": e.eac,
+        "GI": e.gi,
+        "TM": e.tm,
+        "the_date": e.the_date,
+        "hour": e.the_hour,
+    } for e in entries])
+
+    df_corr_doc["the_date"] = pd.to_datetime(df_corr_doc["the_date"])
+    df_corr_doc["month"] = df_corr_doc["the_date"].dt.month
+    df_corr_doc["day"] = df_corr_doc["the_date"].dt.day
+
+    # 🔒 關鍵：刪 GI ≤ 0 和 TM ≤ 0 的異常行
+    df_corr_doc = df_corr_doc[(df_corr_doc["GI"] > 0) & (df_corr_doc["TM"] > 0)]
+
+    # ===============================
+    # 主流程使用的 df（可被清理）
+    # ===============================
     df = pd.DataFrame([{
         "EAC": e.eac,
         "GI": e.gi,
@@ -187,36 +195,29 @@ def visualize_data(
         "the_date": e.the_date,
         "hour": e.the_hour,
     } for e in entries])
+
     df = df.drop_duplicates(subset=["the_date", "hour"], keep="first")
     df["the_date"] = pd.to_datetime(df["the_date"])
     df["month"] = df["the_date"].dt.month
     df["day"] = df["the_date"].dt.day
-    df_corr_doc = df.copy()
-    df_corr_doc = df_corr_doc[df_corr_doc["GI"] > 0]
 
     # ===============================
     # Stage 0：原始
     # ===============================
-    plots_raw = build_plots(df)
+    
+    plots_raw = build_plots(
+        df,
+        outlier_mask=pd.Series(False, index=df.index),
+        corr_df_override=df_corr_doc
+    )
 
     # ===============================
     # Stage 1：GI / TM 清理
     # ===============================
     df1 = df.copy()
 
-    # 1️⃣ 刪除 GI = 0（無發電意義）
-    df1 = df1[df1["GI"] > 0].copy()
-
-    # 2️⃣ TM = 0 視為異常（非真實溫度）
-    df1.loc[df1["TM"] == 0, "TM"] = np.nan
-
-    # 3️⃣ 依時間排序（內插前必要）
-    df1 = df1.sort_values(["the_date", "hour"])
-
-    # 4️⃣ 僅對 TM 做時間序列線性內插
     if apply_gi_tm:
-        df1 = df.copy()
-        df1 = df1[df1["GI"] > 0]
+        df1 = df1[df1["GI"] > 0].copy()
         df1.loc[df1["TM"] <= 0, "TM"] = np.nan
         df1 = df1.sort_values(["the_date", "hour"])
         if df1["TM"].notna().sum() >= 2:
@@ -224,7 +225,7 @@ def visualize_data(
     else:
         df1 = df.copy()
 
-    plots_stage1 = build_plots(df1)
+    
 
    # ===============================
     # Stage 2：離群值（標記 + 可選移除）
