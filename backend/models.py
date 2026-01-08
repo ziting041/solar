@@ -2,6 +2,8 @@ from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, Dat
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from database import Base
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Boolean, String
 
 
 class User(Base):
@@ -46,10 +48,30 @@ class SiteData(Base):
     eac = Column(Float, nullable=True)
 
     data_name = Column(String, nullable=True)
-    outlier_method = Column(String, nullable=True)
-    missing_method = Column(String, nullable=True)
 
-    original_rows = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     site = relationship("Site", back_populates="site_data")
+
+class AfterData(Base):
+    __tablename__ = "after_data"
+
+    after_id = Column(Integer, primary_key=True, index=True)
+
+    # 對應原始 site_data
+    data_id = Column(Integer, ForeignKey("site_data.data_id"), nullable=False)
+
+    after_name = Column(String, nullable=False)
+
+    before_rows = Column(Integer, nullable=False)
+    after_rows = Column(Integer, nullable=False)
+    removed_ratio = Column(Float, nullable=False)
+
+    # ✅ 新欄位
+    outlier_method = Column(String, nullable=True)     # iqr / zscore / isolation_forest
+    gi_tm_applied = Column(Boolean, nullable=False)    # True / False
+    outlier_params = Column(JSONB, nullable=True)      # 係數
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    site_data = relationship("SiteData")

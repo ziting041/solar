@@ -6,6 +6,8 @@ from sklearn.ensemble import IsolationForest
 
 from database import get_db
 from models import SiteData
+from models import SiteData, AfterData
+
 
 router = APIRouter(tags=["Visualize"])
 
@@ -321,3 +323,111 @@ def visualize_data(
             "after_outlier": plots_stage2
         }
     })
+
+@router.post("/save-cleaned-data/")
+def save_cleaned_data(payload: dict, db: Session = Depends(get_db)):
+    file_name = payload.get("file_name")
+    apply_gi_tm = payload.get("apply_gi_tm", True)
+    outlier_method = payload.get("outlier_method", "none")
+    remove_outliers = payload.get("remove_outliers", True)
+
+    if not file_name:
+        raise HTTPException(status_code=400, detail="缺少 file_name")
+
+    # 1️⃣ 找原始資料
+    entries = (
+        db.query(SiteData)
+        .filter(SiteData.data_name == file_name)
+        .all()
+    )
+
+    if not entries:
+        raise HTTPException(status_code=404, detail="找不到原始資料")
+
+    data_id = entries[0].data_id
+
+    # 建立與 visualize raw stage 一致的 df
+    df_raw = pd.DataFrame([{
+        "EAC": e.eac,
+        "GI": e.gi,
+        "TM": e.tm,
+        "the_date": e.the_date,
+        "hour": e.the_hour,
+    } for e in entries])
+
+    df_raw = df_raw.drop_duplicates(
+        subset=["the_date", "hour"],
+        keep="first"
+    )
+
+    before_rows = len(df_raw)
+
+    # 2️⃣ 重跑一次清理流程（維持你原本邏輯）
+    df = pd.DataFrame([{
+        "EAC": e.eac,
+        "GI": e.gi,
+        "TM": e.tm,
+        "the_date": e.the_date,
+        "hour": e.the_hour,
+    } for e in entries])
+
+    df = df.drop_duplicates(
+        subset=["the_date", "hour"],
+        keep="first"
+    )
+
+    if apply_gi_tm:
+        df = df[df["GI"] > 0].copy()
+        df.loc[df["TM"] <= 0, "TM"] = np.nan
+        df = df.sort_values(["the_date", "hour"])
+        if df["TM"].notna().sum() >= 2:
+            df["TM"] = df["TM"].interpolate("linear", limit_direction="both")
+
+    if outlier_method != "none" and remove_outliers:
+        df = df.dropna()
+
+    after_rows = len(df)
+
+    # 3️⃣ 組 outlier_params（只記係數）
+    outlier_params = None
+    if outlier_method.startswith("iqr"):
+        outlier_params = {
+            "iqr_factor": payload.get("iqr_factor")
+        }
+    elif outlier_method == "zscore":
+        outlier_params = {
+            "z_threshold": payload.get("z_threshold")
+        }
+    elif outlier_method == "isolation_forest":
+        outlier_params = {
+            "contamination": payload.get("isolation_contamination")
+        }
+
+    # 4️⃣ 寫入 after_data（符合你最新設計）
+    after = AfterData(
+        data_id=data_id,
+        after_name=f"{file_name}_cleaned",
+        before_rows=before_rows,
+        after_rows=after_rows,
+        removed_ratio=(
+            (before_rows - after_rows) / before_rows
+            if before_rows > 0 else 0
+        ),
+        outlier_method=outlier_method if outlier_method != "none" else None,
+        gi_tm_applied=apply_gi_tm,
+        outlier_params=outlier_params
+    )
+
+    db.add(after)
+    db.commit()
+    db.refresh(after)
+
+    return {
+        "message": "清理完成",
+        "before_rows": before_rows,
+        "after_rows": after_rows,
+        "removed_ratio": round(
+            (before_rows - after_rows) / before_rows, 3
+        ),
+        "after_id": after.after_id
+    }

@@ -358,6 +358,9 @@ export default function DataCleaning({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  const [result, setResult] = useState(null);
+  const [showResultModal, setShowResultModal] = useState(false);
+
   const [selectedTab, setSelectedTab] = useState("scatter");
   const [selectedBoxplot, setSelectedBoxplot] = useState("month");
 
@@ -409,11 +412,13 @@ export default function DataCleaning({
       const body = {
         file_name: fileName,
         apply_outlier: applyOutlier,
+        apply_gi_tm: applyGiTm,
+        remove_outliers: true,
         ...(applyOutlier && {
           outlier_method: outlierMethod,
-          iqr_factor: parseFloat(iqrFactor),
-          z_threshold: parseFloat(zThreshold),
-          isolation_contamination: parseFloat(isolationContamination),
+          iqr_factor: iqrFactor,
+          z_threshold: zThreshold,
+          isolation_contamination: isolationContamination,
         }),
       };
       const res = await fetch("http://127.0.0.1:8000/save-cleaned-data/", {
@@ -423,8 +428,15 @@ export default function DataCleaning({
       });
 
       if (!res.ok) throw new Error("儲存失敗");
-      const result = await res.json();
-      alert(`清理完成！新檔案：${result.new_file_name}\n行數：${result.rows_after_cleaning}`);
+      const data = await res.json();
+
+      setResult({
+        before_rows: data.before_rows,
+        after_rows: data.after_rows,
+        removed_ratio: data.removed_ratio,
+      });
+      setShowResultModal(true);
+      
       onNext();
     } catch (err) {
       alert("儲存失敗，請稍後再試");

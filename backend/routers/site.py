@@ -218,15 +218,13 @@ async def upload_site_data(
             tm=float(row["tm"]),
             eac=float(row["eac"]),
             data_name=file.filename,
-            outlier_method="raw",
-            missing_method="raw",
-            original_rows=len(df),
         )
         entries.append(entry)
 
     # 7️⃣ 一次寫入
     db.add_all(entries)
     db.commit()
+    db.refresh(entries[0])
 
     # =========================
     # 8️⃣ 回傳（🔥 重點在這）
