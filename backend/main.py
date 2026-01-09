@@ -9,6 +9,7 @@ from routers.auth import router as auth_router
 from routers.site import router as site_router
 from routers.visualize import router as visualize_router
 from routers.data import router as data_router
+from routers.unit_adjustment import router as unit_router 
 
 Base.metadata.create_all(bind=engine)
 
@@ -29,6 +30,7 @@ app.include_router(auth_router)
 app.include_router(site_router)
 app.include_router(visualize_router)
 app.include_router(data_router)
+app.include_router(unit_router)
 
 @app.get("/")
 def root():

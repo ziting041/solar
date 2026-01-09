@@ -67,22 +67,43 @@ function HistogramSVG({ bins = [], counts = [], height = 160 }) {
   );
 }
 
-// 箱型圖 SVG（支援排序 + 彩虹漸層顏色，匹配圖片）
-function BoxplotSVG({ groups = {}, width = 900, height = 400 }) {
-  const keys = Object.keys(groups)
-    .map(Number)
-    .sort((a, b) => a - b)
-    .map(String);
+// 箱型圖 SVG（支援排序 + 彩虹漸層顏色，匹配圖片，並支援「空箱細線」）
+function BoxplotSVG({ groups = {}, width = 900, height = 400, expectedKeys }) {
+  // 如果有 expectedKeys，就以它為準；否則用後端給的 key
+  let keys;
+  if (expectedKeys && expectedKeys.length > 0) {
+    keys = expectedKeys.map(String);
+  } else {
+    keys = Object.keys(groups)
+      .map(Number)
+      .sort((a, b) => a - b)
+      .map(String);
+  }
 
   if (keys.length === 0) {
     return <div className="text-white/40 text-lg">無分組資料</div>;
   }
 
+  // 收集有數值的群組，拿來決定 Y 軸範圍
   let allVals = [];
   keys.forEach((k) => {
     const g = groups[k];
-    if (g) allVals.push(g.whisker_min || g.min, g.q1, g.median, g.q3, g.whisker_max || g.max, ...(g.outliers || []));
+    if (!g) return;
+    allVals.push(
+      g.whisker_min ?? g.min,
+      g.q1,
+      g.median,
+      g.q3,
+      g.whisker_max ?? g.max,
+      ...(g.outliers || [])
+    );
   });
+
+  // 如果真的所有群組都沒有數值，就顯示「無分組資料」
+  if (!allVals.length || allVals.some((v) => v === undefined || v === null)) {
+    return <div className="text-white/40 text-lg">無分組資料</div>;
+  }
+
   const vmin = Math.min(...allVals);
   const vmax = Math.max(...allVals);
   const pad = (vmax - vmin) * 0.06 || 1;
@@ -94,34 +115,102 @@ function BoxplotSVG({ groups = {}, width = 900, height = 400 }) {
     return 30 + hv - ((v - rangeMin) / (rangeMax - rangeMin)) * hv;
   };
 
-  const boxW = Math.max(12, (width - 80) / keys.length * 0.6);
+  const boxSlotWidth = (width - 80) / keys.length;
+  const boxW = Math.max(12, boxSlotWidth * 0.6);
+  const emptyLineY = height - 40; // 空箱細線畫在靠近底部的位置
 
   return (
-    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet">
+    <svg
+      width="100%"
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="xMidYMid meet"
+    >
       <rect x="0" y="0" width={width} height={height} fill="none" />
+
       {keys.map((k, i) => {
         const g = groups[k];
-        if (!g) return null;
-
-        const hue = (i / (keys.length - 1)) * 300;
-        const boxColor = `hsl(${hue}, 80%, 60%)`;
-        const lineColor = `hsl(${hue}, 70%, 40%)`;
-
-        const cx = 40 + i * ((width - 80) / keys.length) + ((width - 80) / keys.length) / 2;
-        const q1y = mapY(g.q1);
-        const q3y = mapY(g.q3);
-        const medy = mapY(g.median);
-        const whiskerMiny = mapY(g.whisker_min || g.min);
-        const whiskerMaxy = mapY(g.whisker_max || g.max);
+        const cx = 40 + i * boxSlotWidth + boxSlotWidth / 2;
         const boxLeft = cx - boxW / 2;
         const boxRight = cx + boxW / 2;
 
+        // 色相照原本邏輯跑（與 index 相關）
+        const hue = keys.length > 1 ? (i / (keys.length - 1)) * 300 : 200;
+        const boxColor = `hsl(${hue}, 80%, 60%)`;
+        const lineColor = `hsl(${hue}, 70%, 40%)`;
+
+        // 如果這個分組沒有任何統計數值（例如 hour=19 被清掉），畫一條細線當空箱
+        if (!g) {
+          return (
+            <g key={k}>
+              <line
+                x1={boxLeft}
+                x2={boxRight}
+                y1={emptyLineY}
+                y2={emptyLineY}
+                stroke="#555"
+                strokeWidth={1}
+                strokeDasharray="4 3"
+              />
+              <text
+                x={cx}
+                y={height - 10}
+                textAnchor="middle"
+                fontSize="12"
+                fill="#ddd"
+              >
+                {k}
+              </text>
+            </g>
+          );
+        }
+
+        // 正常有數值的箱型圖
+        const q1y = mapY(g.q1);
+        const q3y = mapY(g.q3);
+        const medy = mapY(g.median);
+        const whiskerMiny = mapY(g.whisker_min ?? g.min);
+        const whiskerMaxy = mapY(g.whisker_max ?? g.max);
+
         return (
           <g key={k}>
-            <line x1={cx} x2={cx} y1={whiskerMaxy} y2={q3y} stroke={lineColor} strokeWidth={1.5} />
-            <line x1={cx} x2={cx} y1={q1y} y2={whiskerMiny} stroke={lineColor} strokeWidth={1.5} />
-            <line x1={boxLeft} x2={boxRight} y1={whiskerMaxy} y2={whiskerMaxy} stroke={lineColor} strokeWidth={1.5} />
-            <line x1={boxLeft} x2={boxRight} y1={whiskerMiny} y2={whiskerMiny} stroke={lineColor} strokeWidth={1.5} />
+            {/* 中央豎線 */}
+            <line
+              x1={cx}
+              x2={cx}
+              y1={whiskerMaxy}
+              y2={q3y}
+              stroke={lineColor}
+              strokeWidth={1.5}
+            />
+            <line
+              x1={cx}
+              x2={cx}
+              y1={q1y}
+              y2={whiskerMiny}
+              stroke={lineColor}
+              strokeWidth={1.5}
+            />
+
+            {/* 上下 whisker 橫線 */}
+            <line
+              x1={boxLeft}
+              x2={boxRight}
+              y1={whiskerMaxy}
+              y2={whiskerMaxy}
+              stroke={lineColor}
+              strokeWidth={1.5}
+            />
+            <line
+              x1={boxLeft}
+              x2={boxRight}
+              y1={whiskerMiny}
+              y2={whiskerMiny}
+              stroke={lineColor}
+              strokeWidth={1.5}
+            />
+
+            {/* 箱體 */}
             <rect
               x={boxLeft}
               y={q3y}
@@ -132,7 +221,18 @@ function BoxplotSVG({ groups = {}, width = 900, height = 400 }) {
               stroke={lineColor}
               rx="2"
             />
-            <line x1={boxLeft} x2={boxRight} y1={medy} y2={medy} stroke={lineColor} strokeWidth={3} />
+
+            {/* 中位數線 */}
+            <line
+              x1={boxLeft}
+              x2={boxRight}
+              y1={medy}
+              y2={medy}
+              stroke={lineColor}
+              strokeWidth={3}
+            />
+
+            {/* 離群值 */}
             {g.outliers?.map((outlier, oi) => (
               <circle
                 key={oi}
@@ -144,7 +244,15 @@ function BoxplotSVG({ groups = {}, width = 900, height = 400 }) {
                 strokeWidth="1"
               />
             ))}
-            <text x={cx} y={height - 10} textAnchor="middle" fontSize="12" fill="#ddd">
+
+            {/* x 軸標籤 */}
+            <text
+              x={cx}
+              y={height - 10}
+              textAnchor="middle"
+              fontSize="12"
+              fill="#ddd"
+            >
               {k}
             </text>
           </g>
@@ -153,6 +261,7 @@ function BoxplotSVG({ groups = {}, width = 900, height = 400 }) {
     </svg>
   );
 }
+
 
 // 相關性熱圖 SVG（美化版）
 function CorrelationHeatmapSVG({ variables = [], matrix = [], width = 900, height = 960 }) {
@@ -494,7 +603,14 @@ export default function DataCleaning({
           </div>
         );
 
-      case "boxplot":
+      case "boxplot": {
+        // 從 raw 階段拿到「原始的 hour key」，當作這個圖固定的橫軸
+        const rawHourKeys = stages?.raw?.boxplot_by_hour
+          ? Object.keys(stages.raw.boxplot_by_hour)
+              .map(Number)
+              .sort((a, b) => a - b)
+          : null;
+
         return (
           <div>
             <div className="flex gap-4 justify-center mb-8">
@@ -520,11 +636,16 @@ export default function DataCleaning({
                 <BoxplotSVG groups={plots.boxplot_by_day} />
               )}
               {selectedBoxplot === "hour" && plots.boxplot_by_hour && (
-                <BoxplotSVG groups={plots.boxplot_by_hour} />
+                <BoxplotSVG
+                  groups={plots.boxplot_by_hour}
+                  expectedKeys={rawHourKeys || Object.keys(plots.boxplot_by_hour).map(Number).sort((a, b) => a - b)}
+                />
               )}
             </div>
           </div>
         );
+      }
+
 
       case "correlation":
         const corrPlots = stages?.raw;
